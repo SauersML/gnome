@@ -7,35 +7,72 @@
 }
 
 :root {
-	--bg: #f5f0e8;
-	--bg-warm: #ede8df;
-	--text: #2b2824;
-	--text-dim: #9a9285;
-	--text-faint: #c4bdb2;
-	--accent: #c7522a;
-	--accent-fade: rgba(199, 82, 42, 0.08);
-	--green: #2d6a4f;
-	--border: #ddd6ca;
-	--input-bg: #eae4da;
+	--deep: #0f1a0f;
+	--ground: #162016;
+	--canopy: #1d2b1d;
+	--moss: #2a3f2a;
+	--bark: #3d5a3d;
+	--lichen: #5a7a52;
+	--sage: #8aaa7a;
+	--mist: #b8ccae;
+	--light: #d6e5cd;
+	--glow: #a2e88a;
+	--gold: #d4a843;
+	--gold-dim: #a07e30;
+	--ember: #c87038;
 }
 
 html, body {
 	height: 100%;
-	background: var(--bg);
-	color: var(--text);
-	font-family: "Karla", sans-serif;
-	font-size: clamp(14px, 1.6vw, 16px);
-	line-height: 1.55;
+	background: var(--deep);
+	color: var(--mist);
+	font-family: "Hanken Grotesk", sans-serif;
+	font-size: clamp(14px, 1.6vw, 15.5px);
+	line-height: 1.6;
 	-webkit-font-smoothing: antialiased;
 }
 
+/* pixel grid texture */
 body::before {
 	content: "";
 	position: fixed;
 	inset: 0;
-	background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+	background-image:
+		repeating-linear-gradient(
+			0deg,
+			transparent,
+			transparent 3px,
+			rgba(42, 63, 42, 0.12) 3px,
+			rgba(42, 63, 42, 0.12) 4px
+		),
+		repeating-linear-gradient(
+			90deg,
+			transparent,
+			transparent 3px,
+			rgba(42, 63, 42, 0.12) 3px,
+			rgba(42, 63, 42, 0.12) 4px
+		);
 	pointer-events: none;
 	z-index: 0;
+}
+
+/* dappled light — two slow-moving radial patches */
+body::after {
+	content: "";
+	position: fixed;
+	inset: 0;
+	background:
+		radial-gradient(ellipse 300px 200px at 20% 30%, rgba(162, 232, 138, 0.04), transparent),
+		radial-gradient(ellipse 250px 350px at 75% 70%, rgba(212, 168, 67, 0.03), transparent);
+	pointer-events: none;
+	z-index: 0;
+	animation: dapple 20s ease-in-out infinite alternate;
+}
+
+@keyframes dapple {
+	0% { opacity: 1; }
+	50% { opacity: 0.5; }
+	100% { opacity: 1; }
 }
 
 #root {
@@ -49,43 +86,65 @@ body::before {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
-	max-width: 640px;
+	max-width: 600px;
 	width: 100%;
-	margin-left: clamp(24px, 12vw, 18%);
+	margin-left: clamp(24px, 14vw, 22%);
 }
 
 /* ---- Header ---- */
 .header {
-	padding: clamp(28px, 5vh, 48px) 0 clamp(16px, 3vh, 28px);
+	padding: clamp(24px, 5vh, 44px) 0 clamp(14px, 2.5vh, 22px);
 	flex-shrink: 0;
 	display: flex;
 	align-items: baseline;
 	justify-content: space-between;
-	gap: 24px;
+	gap: 20px;
 }
 
 .brand {
-	font-family: "Instrument Serif", serif;
-	font-style: italic;
-	font-size: clamp(28px, 4vw, 38px);
+	font-family: "Silkscreen", cursive;
+	font-size: clamp(20px, 3.2vw, 28px);
 	font-weight: 400;
-	color: var(--text);
-	letter-spacing: -0.01em;
+	color: var(--glow);
 	line-height: 1;
+	position: relative;
 }
 
 .brand .dot {
-	color: var(--accent);
+	color: var(--gold);
+}
+
+/* shimmer sweep across brand */
+.brand::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: -20%;
+	width: 30%;
+	height: 100%;
+	background: linear-gradient(
+		105deg,
+		transparent 0%,
+		rgba(162, 232, 138, 0.25) 45%,
+		rgba(212, 168, 67, 0.15) 55%,
+		transparent 100%
+	);
+	animation: shimmer 6s ease-in-out infinite;
+	pointer-events: none;
+}
+
+@keyframes shimmer {
+	0%, 100% { left: -30%; opacity: 0; }
+	10% { opacity: 1; }
+	40% { left: 110%; opacity: 1; }
+	50%, 100% { left: 110%; opacity: 0; }
 }
 
 .header-right {
-	font-size: 12px;
-	font-weight: 500;
-	letter-spacing: 0.06em;
-	text-transform: uppercase;
-	color: var(--text-dim);
-	white-space: nowrap;
-	padding-bottom: 4px;
+	font-family: "Silkscreen", cursive;
+	font-size: 10px;
+	letter-spacing: 0.08em;
+	color: var(--lichen);
 }
 
 .header-right::before {
@@ -93,27 +152,32 @@ body::before {
 	display: inline-block;
 	width: 5px;
 	height: 5px;
-	background: var(--green);
-	border-radius: 50%;
-	margin-right: 7px;
+	background: var(--glow);
+	margin-right: 6px;
 	vertical-align: middle;
 	position: relative;
 	top: -1px;
+	animation: pulse 3s ease-in-out infinite;
+}
+
+@keyframes pulse {
+	0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(162, 232, 138, 0.6); }
+	50% { opacity: 0.5; box-shadow: 0 0 1px rgba(162, 232, 138, 0.2); }
 }
 
 /* ---- Divider ---- */
 .divider {
 	height: 1px;
-	background: var(--border);
 	flex-shrink: 0;
-	margin-right: 40px;
+	margin-right: 60px;
+	background: linear-gradient(90deg, var(--moss), var(--canopy) 80%, transparent);
 }
 
 /* ---- Messages ---- */
 .messages {
 	flex: 1;
 	overflow-y: auto;
-	padding: clamp(20px, 3vh, 32px) 0;
+	padding: clamp(16px, 3vh, 28px) 0;
 	scrollbar-width: none;
 }
 
@@ -122,17 +186,17 @@ body::before {
 }
 
 .msg {
-	padding: 7px 0;
+	padding: 5px 0;
 	opacity: 0;
-	transform: translateX(-8px);
-	animation: msgIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	transform: translateX(-6px);
+	animation: msgIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .msg:nth-child(1) { animation-delay: 0s; }
-.msg:nth-child(2) { animation-delay: 0.02s; }
-.msg:nth-child(3) { animation-delay: 0.04s; }
-.msg:nth-child(4) { animation-delay: 0.06s; }
-.msg:nth-child(5) { animation-delay: 0.08s; }
+.msg:nth-child(2) { animation-delay: 0.025s; }
+.msg:nth-child(3) { animation-delay: 0.05s; }
+.msg:nth-child(4) { animation-delay: 0.075s; }
+.msg:nth-child(5) { animation-delay: 0.1s; }
 
 .msg-new {
 	animation-delay: 0s !important;
@@ -140,27 +204,31 @@ body::before {
 
 .msg-who {
 	display: inline;
-	font-weight: 700;
-	font-size: 0.85em;
-	letter-spacing: 0.02em;
-	color: var(--accent);
+	font-family: "Silkscreen", cursive;
+	font-size: 0.72em;
+	color: var(--gold);
 	margin-right: 10px;
 }
 
 .msg-self .msg-who {
-	color: var(--green);
+	color: var(--glow);
 }
 
 .msg-body {
 	display: inline;
-	color: var(--text);
+	color: var(--mist);
 	word-wrap: break-word;
 }
 
 .msg-self {
-	border-left: 2px solid var(--green);
-	padding-left: 12px;
-	margin-left: -14px;
+	border-left: 2px solid var(--glow);
+	padding-left: 10px;
+	margin-left: -12px;
+}
+
+/* subtle glow on self messages */
+.msg-self .msg-body {
+	color: var(--light);
 }
 
 /* ---- Empty state ---- */
@@ -168,77 +236,72 @@ body::before {
 	flex: 1;
 	display: flex;
 	align-items: flex-end;
-	padding-bottom: 20vh;
+	padding-bottom: 18vh;
 }
 
 .empty-text {
-	font-family: "Instrument Serif", serif;
-	font-style: italic;
-	font-size: clamp(32px, 5vw, 48px);
-	color: var(--text-faint);
-	line-height: 1.15;
-	max-width: 320px;
+	font-family: "Silkscreen", cursive;
+	font-size: clamp(18px, 3vw, 26px);
+	color: var(--bark);
+	line-height: 1.4;
+	max-width: 340px;
 }
 
-/* ---- Input ---- */
+/* ---- Compose ---- */
 .compose {
 	flex-shrink: 0;
-	padding: clamp(16px, 3vh, 28px) 0 clamp(24px, 4vh, 40px);
+	padding: clamp(14px, 2.5vh, 24px) 0 clamp(20px, 4vh, 36px);
 }
 
 .compose-form {
 	display: flex;
 	align-items: stretch;
-	gap: 0;
-	border-bottom: 2px solid var(--text);
-	transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+	border-bottom: 2px solid var(--moss);
+	transition: border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .compose-form:focus-within {
-	border-color: var(--accent);
+	border-color: var(--glow);
 }
 
 .compose-input {
 	flex: 1;
 	background: none;
 	border: none;
-	padding: 14px 0;
-	color: var(--text);
-	font-size: clamp(15px, 1.8vw, 17px);
-	font-family: "Karla", sans-serif;
+	padding: 12px 0;
+	color: var(--light);
+	font-size: clamp(14px, 1.6vw, 16px);
+	font-family: "Hanken Grotesk", sans-serif;
 	font-weight: 400;
 	outline: none;
 }
 
 .compose-input::placeholder {
-	color: var(--text-faint);
+	color: var(--bark);
 	font-weight: 300;
 }
 
 .compose-send {
 	background: none;
 	border: none;
-	color: var(--text-dim);
-	font-family: "Karla", sans-serif;
-	font-size: 12px;
-	font-weight: 700;
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
+	color: var(--lichen);
+	font-family: "Silkscreen", cursive;
+	font-size: 10px;
 	cursor: pointer;
-	padding: 14px 0 14px 20px;
+	padding: 12px 0 12px 16px;
 	transition: color 0.15s;
 }
 
 .compose-send:hover {
-	color: var(--accent);
+	color: var(--glow);
 }
 
 .compose-meta {
-	margin-top: 10px;
-	font-size: 11px;
-	font-weight: 500;
+	margin-top: 8px;
+	font-family: "Silkscreen", cursive;
+	font-size: 9px;
+	color: var(--moss);
 	letter-spacing: 0.04em;
-	color: var(--text-faint);
 }
 
 /* ---- Animations ---- */
@@ -258,12 +321,5 @@ body::before {
 
 	.divider {
 		margin-right: 0;
-	}
-}
-
-@container (max-width: 400px) {
-	.header {
-		flex-direction: column;
-		gap: 4px;
 	}
 }
