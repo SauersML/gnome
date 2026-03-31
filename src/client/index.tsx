@@ -8,9 +8,15 @@ function App() {
 	const [name] = useState(names[Math.floor(Math.random() * names.length)]);
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const messagesEnd = useRef<HTMLDivElement>(null);
+	const initialLoad = useRef(true);
 
 	useEffect(() => {
-		messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
+		if (initialLoad.current && messages.length > 0) {
+			messagesEnd.current?.scrollIntoView();
+			initialLoad.current = false;
+		} else {
+			messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
+		}
 	}, [messages]);
 
 	const socket = usePartySocket({
@@ -21,8 +27,8 @@ function App() {
 			if (message.type === "add") {
 				const foundIndex = messages.findIndex((m) => m.id === message.id);
 				if (foundIndex === -1) {
-					setMessages((messages) => [
-						...messages,
+					setMessages((prev) => [
+						...prev,
 						{
 							id: message.id,
 							content: message.content,
@@ -31,8 +37,8 @@ function App() {
 						},
 					]);
 				} else {
-					setMessages((messages) => {
-						return messages
+					setMessages((prev) => {
+						return prev
 							.slice(0, foundIndex)
 							.concat({
 								id: message.id,
@@ -40,12 +46,12 @@ function App() {
 								user: message.user,
 								role: message.role,
 							})
-							.concat(messages.slice(foundIndex + 1));
+							.concat(prev.slice(foundIndex + 1));
 					});
 				}
 			} else if (message.type === "update") {
-				setMessages((messages) =>
-					messages.map((m) =>
+				setMessages((prev) =>
+					prev.map((m) =>
 						m.id === message.id
 							? {
 									id: message.id,
@@ -64,36 +70,39 @@ function App() {
 
 	return (
 		<div className="app">
-			<div className="header">
-				<h1>
-					gnome<span>.</span>science
-				</h1>
-				<div className="status">
-					<span className="status-dot" />
-					global chatroom
+			<header className="header">
+				<div className="brand">
+					gnome<span className="dot">.</span>science
 				</div>
-			</div>
+				<div className="header-right">Live</div>
+			</header>
+
+			<div className="divider" />
 
 			{messages.length === 0 ? (
-				<div className="empty">No messages yet. Say something.</div>
+				<div className="empty">
+					<div className="empty-text">
+						Nothing here yet.
+					</div>
+				</div>
 			) : (
 				<div className="messages">
-					{messages.map((message) => (
+					{messages.map((msg, i) => (
 						<div
-							key={message.id}
-							className={`message ${message.user === name ? "message-self" : ""}`}
+							key={msg.id}
+							className={`msg ${msg.user === name ? "msg-self" : ""} ${i >= messages.length - 1 ? "msg-new" : ""}`}
 						>
-							<div className="message-user">{message.user}</div>
-							<div className="message-content">{message.content}</div>
+							<span className="msg-who">{msg.user}</span>
+							<span className="msg-body">{msg.content}</span>
 						</div>
 					))}
 					<div ref={messagesEnd} />
 				</div>
 			)}
 
-			<div className="input-area">
+			<div className="compose">
 				<form
-					className="input-row"
+					className="compose-form"
 					onSubmit={(e) => {
 						e.preventDefault();
 						const input = e.currentTarget.elements.namedItem(
@@ -106,7 +115,7 @@ function App() {
 							user: name,
 							role: "user",
 						};
-						setMessages((messages) => [...messages, chatMessage]);
+						setMessages((prev) => [...prev, chatMessage]);
 						socket.send(
 							JSON.stringify({
 								type: "add",
@@ -119,12 +128,13 @@ function App() {
 					<input
 						type="text"
 						name="content"
-						placeholder="Type a message..."
+						className="compose-input"
+						placeholder="Write something..."
 						autoComplete="off"
 					/>
-					<button type="submit">Send</button>
+					<button type="submit" className="compose-send">Send</button>
 				</form>
-				<div className="your-name">chatting as {name}</div>
+				<div className="compose-meta">as {name}</div>
 			</div>
 		</div>
 	);
