@@ -2,10 +2,11 @@ import { createRoot } from "react-dom/client";
 import { usePartySocket } from "partysocket/react";
 import React, { useState, useRef, useEffect } from "react";
 import { nanoid } from "nanoid";
-import { names, type ChatMessage, type Message } from "../shared";
+import { type ChatMessage, type Message } from "../shared";
 
 function App() {
-	const [name] = useState(names[Math.floor(Math.random() * names.length)]);
+	const [name, setName] = useState<string | null>(() => localStorage.getItem("gnome_username"));
+	const [nameInput, setNameInput] = useState("");
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const messagesEnd = useRef<HTMLDivElement>(null);
 	const initialLoad = useRef(true);
@@ -67,6 +68,49 @@ function App() {
 			}
 		},
 	});
+
+	if (!name) {
+		return (
+			<div className="app">
+				<header className="header">
+					<div className="brand">
+						gnome<span className="dot">.</span>science
+					</div>
+				</header>
+
+				<div className="divider" />
+
+				<div className="empty">
+					<div className="empty-text">
+						What should we call you?
+					</div>
+				</div>
+
+				<div className="compose">
+					<form
+						className="compose-form"
+						onSubmit={(e) => {
+							e.preventDefault();
+							const trimmed = nameInput.trim();
+							if (!trimmed) return;
+							localStorage.setItem("gnome_username", trimmed);
+							setName(trimmed);
+						}}
+					>
+						<input
+							type="text"
+							className="compose-input"
+							placeholder="Enter your name..."
+							autoComplete="off"
+							value={nameInput}
+							onChange={(e) => setNameInput(e.target.value)}
+						/>
+						<button type="submit" className="compose-send">Join</button>
+					</form>
+				</div>
+			</div>
+		);
+	}
 
 	return (
 		<div className="app">
