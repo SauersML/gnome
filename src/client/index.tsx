@@ -1,12 +1,17 @@
 import { createRoot } from "react-dom/client";
 import { usePartySocket } from "partysocket/react";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { nanoid } from "nanoid";
 import { names, type ChatMessage, type Message } from "../shared";
 
 function App() {
 	const [name] = useState(names[Math.floor(Math.random() * names.length)]);
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
+	const messagesEnd = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
+	}, [messages]);
 
 	const socket = usePartySocket({
 		party: "chat",
@@ -16,7 +21,6 @@ function App() {
 			if (message.type === "add") {
 				const foundIndex = messages.findIndex((m) => m.id === message.id);
 				if (foundIndex === -1) {
-					// probably someone else who added a message
 					setMessages((messages) => [
 						...messages,
 						{
@@ -27,9 +31,6 @@ function App() {
 						},
 					]);
 				} else {
-					// this usually means we ourselves added a message
-					// and it was broadcasted back
-					// so let's replace the message with the new message
 					setMessages((messages) => {
 						return messages
 							.slice(0, foundIndex)
@@ -62,53 +63,71 @@ function App() {
 	});
 
 	return (
-		<div className="chat container">
-			{messages.map((message) => (
-				<div key={message.id} className="row message">
-					<div className="two columns user">{message.user}</div>
-					<div className="ten columns">{message.content}</div>
+		<div className="app">
+			<div className="header">
+				<h1>
+					gnome<span>.</span>science
+				</h1>
+				<div className="status">
+					<span className="status-dot" />
+					global chatroom
 				</div>
-			))}
-			<form
-				className="row"
-				onSubmit={(e) => {
-					e.preventDefault();
-					const content = e.currentTarget.elements.namedItem(
-						"content",
-					) as HTMLInputElement;
-					const chatMessage: ChatMessage = {
-						id: nanoid(8),
-						content: content.value,
-						user: name,
-						role: "user",
-					};
-					setMessages((messages) => [...messages, chatMessage]);
-					// we could broadcast the message here
+			</div>
 
-					socket.send(
-						JSON.stringify({
-							type: "add",
-							...chatMessage,
-						} satisfies Message),
-					);
+			{messages.length === 0 ? (
+				<div className="empty">No messages yet. Say something.</div>
+			) : (
+				<div className="messages">
+					{messages.map((message) => (
+						<div
+							key={message.id}
+							className={`message ${message.user === name ? "message-self" : ""}`}
+						>
+							<div className="message-user">{message.user}</div>
+							<div className="message-content">{message.content}</div>
+						</div>
+					))}
+					<div ref={messagesEnd} />
+				</div>
+			)}
 
-					content.value = "";
-				}}
-			>
-				<input
-					type="text"
-					name="content"
-					className="ten columns my-input-text"
-					placeholder={`Hello ${name}! Type a message...`}
-					autoComplete="off"
-				/>
-				<button type="submit" className="send-message two columns">
-					Send
-				</button>
-			</form>
+			<div className="input-area">
+				<form
+					className="input-row"
+					onSubmit={(e) => {
+						e.preventDefault();
+						const input = e.currentTarget.elements.namedItem(
+							"content",
+						) as HTMLInputElement;
+						if (!input.value.trim()) return;
+						const chatMessage: ChatMessage = {
+							id: nanoid(8),
+							content: input.value,
+							user: name,
+							role: "user",
+						};
+						setMessages((messages) => [...messages, chatMessage]);
+						socket.send(
+							JSON.stringify({
+								type: "add",
+								...chatMessage,
+							} satisfies Message),
+						);
+						input.value = "";
+					}}
+				>
+					<input
+						type="text"
+						name="content"
+						placeholder="Type a message..."
+						autoComplete="off"
+					/>
+					<button type="submit">Send</button>
+				</form>
+				<div className="your-name">chatting as {name}</div>
+			</div>
 		</div>
 	);
 }
 
-// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 createRoot(document.getElementById("root")!).render(<App />);
