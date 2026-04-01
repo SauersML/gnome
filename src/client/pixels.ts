@@ -347,15 +347,21 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				g = Math.min(255, Math.max(0, g)) | 0;
 				b = Math.min(255, Math.max(0, b)) | 0;
 
-				// scatter black pixels near text glyphs using mask
+				// darken near text glyphs using mask
 				if (mask.length > 0 && col < maskW && row < maskH) {
 					const proximity = mask[row * maskW + col]; // 0-255, 255 = on glyph
 					if (proximity > 0) {
-						// probability of going black: based on proximity + noise
-						const prob = proximity / 255;
+						const p = proximity / 255; // 0-1
 						const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
-						if (noise < prob * prob) {
+						if (noise < p * p) {
+							// some pixels go full black (more likely near glyphs)
 							r = 0; g = 0; b = 0;
+						} else {
+							// rest get dimmed proportionally — closer = darker
+							const dim = 1.0 - p * 0.7;
+							r = (r * dim) | 0;
+							g = (g * dim) | 0;
+							b = (b * dim) | 0;
 						}
 					}
 				}
