@@ -169,7 +169,7 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 
 		// blur to create halo (GPU-accelerated)
 		bctx.clearRect(0, 0, fw, fh);
-		bctx.filter = `blur(${HALO * PX}px)`;
+		bctx.filter = `blur(${PX}px)`;
 		bctx.drawImage(glyphCanvas, 0, 0);
 		bctx.filter = "none";
 
