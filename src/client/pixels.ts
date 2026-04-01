@@ -91,7 +91,7 @@ function makePixel(col: number, row: number): PixelProps {
 	};
 }
 
-const HALO = 6;
+const HALO = 5; // scatter radius in grid cells around text glyphs
 
 export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	const ctx = canvas.getContext("2d")!;
@@ -100,37 +100,116 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	let cols = 0;
 	let rows = 0;
 
-	// Walk all text nodes in #root and get tight per-line rects
-	function getTextRects(): { c0: number; r0: number; c1: number; r1: number }[] {
+	// Offscreen canvas to render DOM text and build a glyph mask
+	const maskCanvas = document.createElement("canvas");
+	const mctx = maskCanvas.getContext("2d", { willReadFrequently: true })!;
+	// mask at grid resolution (1 pixel per cell) — we only need per-cell info
+	let mask: Uint8Array = new Uint8Array(0); // 0-255 proximity to text glyphs
+	let maskW = 0;
+	let maskH = 0;
+
+	function buildTextMask() {
+		maskW = cols;
+		maskH = rows;
+		if (maskW === 0 || maskH === 0) return;
+
+		// render at full resolution to capture glyph shapes
+		const fw = maskW * PX;
+		const fh = maskH * PX;
+		maskCanvas.width = fw;
+		maskCanvas.height = fh;
+
+		// draw all text from DOM onto offscreen canvas in white
+		mctx.clearRect(0, 0, fw, fh);
+		mctx.fillStyle = "#fff";
+
 		const root = document.getElementById("root");
-		if (!root) return [];
+		if (!root) return;
 		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-		const rects: { c0: number; r0: number; c1: number; r1: number }[] = [];
 		const range = document.createRange();
 		let node: Text | null;
 		while ((node = walker.nextNode() as Text | null)) {
 			if (!node.textContent || !node.textContent.trim()) continue;
-			range.selectNodeContents(node);
-			const clientRects = range.getClientRects();
-			for (let i = 0; i < clientRects.length; i++) {
-				const r = clientRects[i];
-				if (r.width < 1 || r.height < 1) continue;
-				rects.push({
-					c0: r.left / PX,
-					r0: r.top / PX,
-					c1: r.right / PX,
-					r1: r.bottom / PX,
-				});
+			const parent = node.parentElement;
+			if (!parent) continue;
+			const style = getComputedStyle(parent);
+			mctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+			// get per-character rects for accurate positioning
+			for (let ci = 0; ci < node.textContent.length; ci++) {
+				if (node.textContent[ci].trim() === "") continue;
+				range.setStart(node, ci);
+				range.setEnd(node, ci + 1);
+				const rects = range.getClientRects();
+				for (let ri = 0; ri < rects.length; ri++) {
+					const rc = rects[ri];
+					// fillText at the baseline position
+					mctx.fillText(node.textContent[ci], rc.left, rc.bottom - parseFloat(style.fontSize) * 0.18);
+				}
 			}
 		}
-		// also grab input placeholders/values which aren't text nodes
-		const inputs = root.querySelectorAll("input");
+
+		// also render input values/placeholders
+		const inputs = root.querySelectorAll("input") as NodeListOf<HTMLInputElement>;
 		for (let i = 0; i < inputs.length; i++) {
-			const r = inputs[i].getBoundingClientRect();
-			if (r.width < 1 || r.height < 1) continue;
-			rects.push({ c0: r.left / PX, r0: r.top / PX, c1: r.right / PX, r1: r.bottom / PX });
+			const inp = inputs[i];
+			const text = inp.value || inp.placeholder;
+			if (!text) continue;
+			const rc = inp.getBoundingClientRect();
+			const style = getComputedStyle(inp);
+			mctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+			mctx.fillText(text, rc.left, rc.bottom - parseFloat(style.fontSize) * 0.18);
 		}
-		return rects;
+
+		// read full-res pixels, then build a grid-resolution proximity mask
+		// first: binary glyph mask at full res
+		const imgData = mctx.getImageData(0, 0, fw, fh).data;
+
+		// for each grid cell, compute distance to nearest glyph pixel
+		// step 1: find which cells contain glyph pixels
+		const cellHasGlyph = new Uint8Array(maskW * maskH);
+		for (let gy = 0; gy < maskH; gy++) {
+			for (let gx = 0; gx < maskW; gx++) {
+				// check if any full-res pixel in this cell is lit
+				let found = false;
+				const x0 = gx * PX;
+				const y0 = gy * PX;
+				for (let py = y0; py < y0 + PX && !found; py++) {
+					for (let px = x0; px < x0 + PX && !found; px++) {
+						if (imgData[(py * fw + px) * 4 + 3] > 30) found = true;
+					}
+				}
+				if (found) cellHasGlyph[gy * maskW + gx] = 1;
+			}
+		}
+
+		// step 2: distance field — for each cell, min distance to a glyph cell
+		mask = new Uint8Array(maskW * maskH);
+		const searchR = HALO;
+		for (let gy = 0; gy < maskH; gy++) {
+			for (let gx = 0; gx < maskW; gx++) {
+				let minD = searchR + 1;
+				const y0 = Math.max(0, gy - searchR);
+				const y1 = Math.min(maskH - 1, gy + searchR);
+				const x0 = Math.max(0, gx - searchR);
+				const x1 = Math.min(maskW - 1, gx + searchR);
+				for (let sy = y0; sy <= y1; sy++) {
+					for (let sx = x0; sx <= x1; sx++) {
+						if (cellHasGlyph[sy * maskW + sx]) {
+							const dx = gx - sx;
+							const dy = gy - sy;
+							const d = Math.sqrt(dx * dx + dy * dy);
+							if (d < minD) minD = d;
+						}
+					}
+				}
+				// encode: 255 = on glyph, fades to 0 at HALO distance
+				if (minD <= 0) {
+					mask[gy * maskW + gx] = 255;
+				} else if (minD < searchR) {
+					mask[gy * maskW + gx] = (255 * (1 - minD / searchR)) | 0;
+				}
+			}
+		}
 	}
 
 	function build() {
@@ -162,11 +241,18 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		return sp.map((s) => s / mx);
 	});
 
+	let lastMaskTime = 0;
 	function draw(t: number) {
 		if (cols === 0 || rows === 0) return;
 		const w = canvas.width;
 		const h = canvas.height;
 		const s = t / 1000;
+
+		// rebuild glyph mask every 200ms (text/scroll may change)
+		if (t - lastMaskTime > 200) {
+			buildTextMask();
+			lastMaskTime = t;
+		}
 
 		// 4 lights at different color temperatures, sweeping wide orbits
 		const lights = [
@@ -183,8 +269,6 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 
 		ctx.fillStyle = "#040a05";
 		ctx.fillRect(0, 0, w, h);
-
-		const regions = getTextRects();
 
 		for (let row = 0; row < rows; row++) {
 			for (let col = 0; col < cols; col++) {
@@ -263,47 +347,18 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				g = Math.min(255, Math.max(0, g)) | 0;
 				b = Math.min(255, Math.max(0, b)) | 0;
 
-				// blacken near text with dissolve edge
-				let darken = 1.0;
-
-				// multi-octave noise for this pixel (computed once, reused)
-				const h0 = Math.abs(hash(col, row, 500));
-				const h1 = Math.abs(hash(col * 2 + 5, row * 2 + 3, 601));
-				const h2 = Math.abs(hash(col * 5 + 11, row * 3 + 7, 702));
-				const h3 = Math.abs(hash(col + row * 37, row - col * 13, 803));
-				// combine at different amplitudes for fractal-ish noise, range ~0-1
-				const pnoise = ((h0 % 500) * 0.4 + (h1 % 500) * 0.3 + (h2 % 500) * 0.2 + (h3 % 500) * 0.1) / 500;
-
-				for (let ri = 0; ri < regions.length; ri++) {
-					const reg = regions[ri];
-					// true euclidean distance to rect edge
-					const dx = Math.max(reg.c0 - col, 0, col - reg.c1);
-					const dy = Math.max(reg.r0 - row, 0, row - reg.r1);
-					const dist = Math.sqrt(dx * dx + dy * dy);
-
-					if (dist >= HALO) continue;
-
-					if (dist < 0.5) {
-						// on or inside text — black
-						darken = 0;
-					} else {
-						// dissolve zone: use noise to decide if this pixel goes black
-						// pixels close to text are very likely black, far ones rarely
-						const t = dist / HALO; // 0 near text, 1 at edge
-						// warp threshold with noise so boundary is ragged
-						if (pnoise > t * t) {
-							darken = 0;
-						} else {
-							// partial dim for pixels that survive the dissolve
-							const fade = t * t;
-							darken = Math.min(darken, fade);
+				// scatter black pixels near text glyphs using mask
+				if (mask.length > 0 && col < maskW && row < maskH) {
+					const proximity = mask[row * maskW + col]; // 0-255, 255 = on glyph
+					if (proximity > 0) {
+						// probability of going black: based on proximity + noise
+						const prob = proximity / 255;
+						const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
+						if (noise < prob * prob) {
+							r = 0; g = 0; b = 0;
 						}
 					}
 				}
-
-				r = (r * darken) | 0;
-				g = (g * darken) | 0;
-				b = (b * darken) | 0;
 
 				ctx.fillStyle = `rgb(${r},${g},${b})`;
 				ctx.fillRect(col * PX, row * PX, PX, PX);
