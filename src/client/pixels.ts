@@ -100,29 +100,37 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	let cols = 0;
 	let rows = 0;
 
-	const TEXT_SELECTORS = [
-		".brand", ".header-right",
-		".msg-who", ".msg-body",
-		".empty-text",
-		".compose-input", ".compose-send", ".compose-meta",
-		".sidebar-label", ".sidebar-item-title", ".sidebar-item-desc",
-		".article-back", ".article-title", ".article-abstract",
-		".article-body p", ".tex-block",
-	];
-	const textQuery = TEXT_SELECTORS.join(",");
-
-	function getTextRegions(): { c0: number; r0: number; c1: number; r1: number }[] {
-		const els = document.querySelectorAll(textQuery);
-		const regions: { c0: number; r0: number; c1: number; r1: number }[] = [];
-		for (let i = 0; i < els.length; i++) {
-			const rect = els[i].getBoundingClientRect();
-			if (rect.width === 0 || rect.height === 0) continue;
-			regions.push({
-				c0: rect.left / PX, r0: rect.top / PX,
-				c1: rect.right / PX, r1: rect.bottom / PX,
-			});
+	// Walk all text nodes in #root and get tight per-line rects
+	function getTextRects(): { c0: number; r0: number; c1: number; r1: number }[] {
+		const root = document.getElementById("root");
+		if (!root) return [];
+		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+		const rects: { c0: number; r0: number; c1: number; r1: number }[] = [];
+		const range = document.createRange();
+		let node: Text | null;
+		while ((node = walker.nextNode() as Text | null)) {
+			if (!node.textContent || !node.textContent.trim()) continue;
+			range.selectNodeContents(node);
+			const clientRects = range.getClientRects();
+			for (let i = 0; i < clientRects.length; i++) {
+				const r = clientRects[i];
+				if (r.width < 1 || r.height < 1) continue;
+				rects.push({
+					c0: r.left / PX,
+					r0: r.top / PX,
+					c1: r.right / PX,
+					r1: r.bottom / PX,
+				});
+			}
 		}
-		return regions;
+		// also grab input placeholders/values which aren't text nodes
+		const inputs = root.querySelectorAll("input");
+		for (let i = 0; i < inputs.length; i++) {
+			const r = inputs[i].getBoundingClientRect();
+			if (r.width < 1 || r.height < 1) continue;
+			rects.push({ c0: r.left / PX, r0: r.top / PX, c1: r.right / PX, r1: r.bottom / PX });
+		}
+		return rects;
 	}
 
 	function build() {
@@ -176,7 +184,7 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		ctx.fillStyle = "#040a05";
 		ctx.fillRect(0, 0, w, h);
 
-		const regions = getTextRegions();
+		const regions = getTextRects();
 
 		for (let row = 0; row < rows; row++) {
 			for (let col = 0; col < cols; col++) {
@@ -255,30 +263,34 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				g = Math.min(255, Math.max(0, g)) | 0;
 				b = Math.min(255, Math.max(0, b)) | 0;
 
-				// darken under text regions with organic falloff
+				// blacken under actual text, fringe outside
 				let darken = 1.0;
 				for (let ri = 0; ri < regions.length; ri++) {
 					const reg = regions[ri];
-					const dMin = Math.min(col - reg.c0, reg.c1 - col, row - reg.r0, reg.r1 - row);
+					// distance outside the rect (0 = on edge, negative = inside, positive = outside)
+					const dLeft = reg.c0 - col;
+					const dRight = col - reg.c1;
+					const dTop = reg.r0 - row;
+					const dBottom = row - reg.r1;
+					// positive = outside, how far from nearest edge
+					const dOut = Math.max(dLeft, dRight, dTop, dBottom);
 
-					if (dMin > FRINGE) {
-						// fully inside — black
+					if (dOut <= 0) {
+						// inside text rect — full black
 						darken = 0;
-					} else if (dMin > -FRINGE) {
-						// fringe zone: smooth ramp + noise for organic edge
-						const t = (dMin + FRINGE) / (2 * FRINGE); // 0 at outer edge, 1 at inner
+					} else if (dOut < FRINGE) {
+						// outside but within fringe — fade out with noise
+						const t = 1.0 - dOut / FRINGE; // 1 at edge, 0 at fringe boundary
 
-						// multi-octave noise for irregular boundary
 						const n1 = (Math.abs(hash(col, row, 777 + ri)) % 1000) / 1000;
 						const n2 = (Math.abs(hash(col * 3 + 7, row * 3 + 13, 999 + ri)) % 1000) / 1000;
 						const noise = n1 * 0.6 + n2 * 0.4;
 
-						// shift the threshold by noise so the boundary wobbles
-						const threshold = t * 1.4 - noise * 0.4;
-
+						// near the text: almost certainly dark. far out: probably not
+						const threshold = t - noise * 0.35;
 						if (threshold > 0) {
-							const strength = Math.min(1.0, threshold);
-							darken = Math.min(darken, 1.0 - strength); // ramps to 0 (black)
+							const strength = Math.min(1.0, threshold * 1.5);
+							darken = Math.min(darken, 1.0 - strength);
 						}
 					}
 				}
