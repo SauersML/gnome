@@ -23,75 +23,60 @@ function kb(tex: string): string {
 
 const articles: Article[] = [
 	{
-		slug: "hollow-orbit",
-		title: "\u2234 Hollow Orbit Theorem",
-		abstract: "\u2220\u22C5\u2236 collapse of nested rings under spectral torsion.",
+		slug: "golden-contour",
+		title: "\u2234 Golden Contour Integrals",
+		abstract: "\u2220\u22C5\u2236 residues of rational functions at powers of the golden ratio.",
 		body: () => `
-<p>Let ${k(`\\Theta`)} be a hollow orbit over ${k(`\\mathfrak{g}_\\infty`)}. The winding density ${k(`\\omega(\\Theta)`)} satisfies</p>
-<div class="tex-block">${kb(`\\omega(\\Theta) = \\oint_{\\partial \\Theta} \\frac{d\\zeta}{\\zeta^2 - \\varphi}`)}</div>
-<p>where ${k(`\\varphi = \\frac{1+\\sqrt{5}}{2}`)}. Under spectral torsion ${k(`\\tau \\to \\tau^\\dagger`)}, the orbit collapses:</p>
-<div class="tex-block">${kb(`\\lim_{n \\to \\aleph_0} \\Theta^{(n)} = \\bigcap_{k} \\mathcal{R}_k \\setminus \\{\\emptyset\\}`)}</div>
-<p>The residue at each ring boundary ${k(`\\partial \\mathcal{R}_k`)} is purely imaginary, giving</p>
-<div class="tex-block">${kb(`\\text{Res}_{\\zeta = \\varphi^k} \\omega = i \\cdot (-1)^k \\cdot \\frac{\\pi}{\\sqrt{\\tau}}`)}</div>
-<p>We normalize away casing and repeated orbits; the logic is idempotent. The possessive ring-phrases are treated relationally: ${k(`\\Theta_k \\rhd \\Theta_{k+1}`)} becomes <code>ringOf k (k+1)</code>. The positive copular fragment generates a thin category on ring-entities. Morphisms are proofs of <code>Is ${k(`\\Theta_i`)} ${k(`\\Theta_j`)}</code>.</p>
-<div class="tex-block">${kb(`\\text{ThinCat}(\\Theta) := \\left(\\text{Obj} = \\{\\mathcal{R}_k\\},\\; \\text{Hom} = \\text{Is},\\; \\text{id} = \\text{refl},\\; \\circ = \\text{trans}\\right)`)}</div>
-<p>The ungrammatical torsion phrase "${k(`\\tau`)} best than ${k(`\\tau^\\dagger`)}" is preserved literally as its own primitive <code>bestThan</code>; it is not silently corrected. Every other binary predicate is a profunctor on this thin category:</p>
-<div class="tex-block">${kb(`\\text{Bimod}(v) := \\left\\{ \\text{Rel} : \\Theta \\times \\Theta \\to \\text{Prop},\\; \\text{mapLeft},\\; \\text{mapRight} \\right\\}`)}</div>
-<p>Negative statements are <em>not</em> classical negation. They live in separate profunctors <code>NotIs</code>, <code>NegRel</code>, making the theory paraconsistent rather than explosive. The one genuinely unary modal claim, "${k(`\\Theta`)} will always converge", is a presheaf:</p>
-<div class="tex-block">${kb(`\\text{Presheaf}(\\Theta) := \\left\\{ \\text{Pred} : \\mathcal{R}_k \\to \\text{Prop},\\; \\text{map} : \\text{Is}\\;a'\\;a \\to \\text{Pred}\\;a \\to \\text{Pred}\\;a' \\right\\}`)}</div>
+<p>Let ${k(`\\varphi = \\frac{1+\\sqrt{5}}{2}`)} and consider the rational function ${k(`f(z) = \\frac{1}{z^2 - z - 1}`)}. Its poles are at ${k(`z = \\varphi`)} and ${k(`z = 1 - \\varphi = -1/\\varphi`)}. We compute</p>
+<div class="tex-block">${kb(`\\text{Res}_{z=\\varphi}\\, f = \\lim_{z \\to \\varphi} (z - \\varphi) \\cdot \\frac{1}{z^2 - z - 1} = \\frac{1}{2\\varphi - 1} = \\frac{1}{\\sqrt{5}}`)}</div>
+<p>Let ${k(`\\gamma`)} be a positively oriented circle of radius ${k(`2`)} centered at the origin. Both poles lie inside ${k(`\\gamma`)}, so by the residue theorem</p>
+<div class="tex-block">${kb(`\\oint_\\gamma \\frac{dz}{z^2 - z - 1} = 2\\pi i \\left( \\frac{1}{\\sqrt{5}} + \\frac{-1}{\\sqrt{5}} \\right) = 0`)}</div>
+<p>This vanishing is not a coincidence. For any monic quadratic ${k(`z^2 + bz + c`)} with distinct roots, the sum of residues of ${k(`1/(z^2 + bz + c)`)} is always zero, since the partial fractions ${k(`\\frac{1}{r_1 - r_2} + \\frac{1}{r_2 - r_1} = 0`)}.</p>
+<p>Now consider the generating function for Fibonacci numbers. The ${k(`n`)}-th Fibonacci number satisfies ${k(`F_n = \\frac{\\varphi^n - \\psi^n}{\\sqrt{5}}`)} where ${k(`\\psi = -1/\\varphi`)}. We can recover this via</p>
+<div class="tex-block">${kb(`F_n = \\frac{1}{2\\pi i} \\oint_\\gamma \\frac{z^n}{z^2 - z - 1}\\, dz = \\frac{\\varphi^n - \\psi^n}{\\sqrt{5}}`)}</div>
+<p>The contour integral picks out the residues, each contributing a geometric sequence. The identity ${k(`\\varphi^2 = \\varphi + 1`)} gives the recurrence ${k(`F_{n+2} = F_{n+1} + F_n`)} directly from the pole structure.</p>
+<p>For the sum ${k(`\\sum_{n=0}^{\\infty} F_n x^n`)}, convergence requires ${k(`|x| < 1/\\varphi`)}. The closed form is</p>
+<div class="tex-block">${kb(`\\sum_{n=0}^{\\infty} F_n x^n = \\frac{x}{1 - x - x^2}`)}</div>
+<p>Setting ${k(`x = 1/10`)} gives the curious decimal ${k(`\\sum F_n / 10^n = 10/89`)}.</p>
 `,
 	},
 	{
-		slug: "drift-lattice",
-		title: "\u22C8 Drift Lattice Conjecture",
-		abstract: "\u2261\u2237 chromatic drift on infinite filament lattices.",
+		slug: "random-walk-torus",
+		title: "\u22C8 Random Walks on a Torus",
+		abstract: "\u2261\u2237 mixing times for the discrete random walk on ${k(`\\mathbb{Z}_n \\times \\mathbb{Z}_n`)}.",
 		body: () => `
-<p>A filament lattice ${k(`\\mathcal{F}`)} is a directed acyclic tangle with chromatic index ${k(`\\chi(\\mathcal{F}) = \\infty`)}. The drift operator</p>
-<div class="tex-block">${kb(`\\Delta_\\mathcal{F} = \\sum_{e \\in E} \\xi_e \\otimes \\bar{\\xi}_e \\cdot e^{-\\|e\\|/\\lambda}`)}</div>
-<p>generates a semigroup whose fixed points are the silent nodes ${k(`\\mathcal{S} \\subset V(\\mathcal{F})`)}. We conjecture</p>
-<div class="tex-block">${kb(`|\\mathcal{S}| = \\left\\lfloor \\frac{\\chi(\\mathcal{F})}{\\pi^2 / 6} \\right\\rfloor + \\varepsilon`)}</div>
-<p>where ${k(`\\varepsilon \\in \\{0, 1\\}`)} depends on the parity of the longest filament. The spectral shadow of ${k(`\\Delta_\\mathcal{F}`)} lives on</p>
-<div class="tex-block">${kb(`\\sigma(\\Delta_\\mathcal{F}) \\subseteq \\left\\{ z \\in \\mathbb{C} : |z|^3 \\leq \\text{Im}(z) + \\frac{1}{\\lambda} \\right\\}`)}</div>
-<p>We introduce the entity lattice ${k(`\\Lambda`)} with inhabitants</p>
-<div class="tex-block">${kb(`\\Lambda = \\{ \\xi, \\bar\\xi, \\mu, \\nu, \\omega, \\phi, \\psi, \\text{good}, \\text{bad}, \\text{better}, \\text{worse}, \\text{best}, \\text{topic} \\}`)}</div>
-<p>and verb-edges</p>
-<div class="tex-block">${kb(`E = \\{ \\text{knowAbout}, \\text{fighting}, \\text{ignoring}, \\text{interestedIn}, \\text{focusedOn}, \\text{worriedAbout}, \\ldots \\}`)}</div>
-<p>The positive copular fragment ${k(`\\text{Is} : \\Lambda \\times \\Lambda \\to \\text{Prop}`)} is closed under reflexivity and transitivity, with identifications:</p>
-<div class="tex-block">${kb(`\\xi \\cong \\text{friends} \\cong \\text{best} \\cong \\mu \\cong \\nu \\cong \\omega, \\qquad \\bar\\xi \\cong \\text{bad}`)}</div>
-<p>The isomorphism ${k(`\\text{Same}(a,b) := \\text{Is}(a,b) \\wedge \\text{Is}(b,a)`)} is reflexive, symmetric, and transitive. Transport along <code>Is</code> gives substitution for all profunctors:</p>
-<div class="tex-block">${kb(`\\text{PosRel.mapLeft} : \\text{Is}\\;a'\\;a \\to \\text{PosRel}\\;v\\;a\\;b \\to \\text{PosRel}\\;v\\;a'\\;b`)}</div>
-<div class="tex-block">${kb(`\\text{NegRel.mapLeft} : \\text{Is}\\;a'\\;a \\to \\text{NegRel}\\;v\\;a\\;b \\to \\text{NegRel}\\;v\\;a'\\;b`)}</div>
-<p>The negative copula <code>NotIs</code> coexists paraconsistently with <code>Is</code>. The full presented theory packages all structure:</p>
-<div class="tex-block">${kb(`\\mathcal{T} := \\left( C_{\\text{cop}},\\; \\text{NotIs},\\; \\text{Pos} : E \\to \\text{Bimod}(C),\\; \\text{Neg} : E \\to \\text{Bimod}(C),\\; \\text{Unary} : U \\to \\text{Psh}(C) \\right)`)}</div>
+<p>Consider the simple random walk on the discrete torus ${k(`\\mathbb{Z}_n \\times \\mathbb{Z}_n`)}: at each step, move to one of the 4 neighbors uniformly at random. The stationary distribution is uniform: ${k(`\\pi(x) = 1/n^2`)} for all ${k(`x`)}.</p>
+<p>The transition matrix ${k(`P`)} has eigenvalues indexed by ${k(`(j,k) \\in \\mathbb{Z}_n^2`)}:</p>
+<div class="tex-block">${kb(`\\lambda_{j,k} = \\frac{1}{2}\\left(\\cos\\frac{2\\pi j}{n} + \\cos\\frac{2\\pi k}{n}\\right)`)}</div>
+<p>The spectral gap is ${k(`\\gamma = 1 - \\lambda_{1,0} = 1 - \\cos(2\\pi/n)`)}. For large ${k(`n`)},</p>
+<div class="tex-block">${kb(`\\gamma = 1 - \\cos\\frac{2\\pi}{n} = \\frac{2\\pi^2}{n^2} + O(n^{-4})`)}</div>
+<p>The mixing time satisfies the standard bounds</p>
+<div class="tex-block">${kb(`\\frac{1}{\\gamma} \\ln\\frac{1}{2\\varepsilon} \\leq t_{\\text{mix}}(\\varepsilon) \\leq \\frac{1}{\\gamma} \\ln\\frac{1}{\\varepsilon\\, \\pi_{\\min}}`)}</div>
+<p>Substituting ${k(`\\pi_{\\min} = 1/n^2`)} and ${k(`\\gamma \\sim 2\\pi^2/n^2`)}:</p>
+<div class="tex-block">${kb(`t_{\\text{mix}}(\\varepsilon) = \\Theta\\!\\left( \\frac{n^2}{2\\pi^2} \\cdot \\ln n \\right) = \\Theta(n^2 \\log n)`)}</div>
+<p>Compare with the 1D cycle ${k(`\\mathbb{Z}_n`)}, where ${k(`\\gamma \\sim 2\\pi^2/n^2`)} as well, but ${k(`\\pi_{\\min} = 1/n`)}, giving ${k(`t_{\\text{mix}} = \\Theta(n^2 \\log n)`)} in both cases. The torus is not faster despite having more edges; the bottleneck is the same Cheeger constant.</p>
+<p>However, a lazy walk (stay put with probability ${k(`1/2`)}) on an expander graph with ${k(`n^2`)} vertices and spectral gap ${k(`\\gamma = \\Omega(1)`)} mixes in ${k(`O(\\log n)`)} time. The torus is far from an expander.</p>
 `,
 	},
 	{
-		slug: "quiet-morphism",
-		title: "\u2235 Quiet Morphisms",
-		abstract: "\u223F\u2322 vanishing maps between resonant categories.",
+		slug: "thin-categories",
+		title: "\u2235 Thin Categories & Preorders",
+		abstract: "\u223F\u2322 profunctors on posets and paraconsistent negation.",
 		body: () => `
-<p>A morphism ${k(`f: \\mathcal{A} \\to \\mathcal{B}`)} is quiet if the induced map on ${k(`\\pi_0`)} is trivial and the kernel resonates:</p>
-<div class="tex-block">${kb(`\\ker(f_*) \\cong \\bigoplus_{n \\geq 1} \\mathbb{Z}/\\varphi^n\\mathbb{Z}`)}</div>
-<p>The resonance spectrum ${k(`\\mathcal{R}(f)`)} is defined as</p>
-<div class="tex-block">${kb(`\\mathcal{R}(f) = \\left\\{ \\alpha \\in \\mathbb{R} : \\exists\\, g \\in \\text{Hom}(\\mathcal{B}, \\mathcal{A}),\\; \\|g \\circ f - \\alpha \\cdot \\text{id}\\| < \\frac{1}{\\alpha} \\right\\}`)}</div>
-<p>Quiet morphisms compose: if ${k(`f`)} and ${k(`g`)} are quiet then ${k(`g \\circ f`)} is silent, meaning</p>
-<div class="tex-block">${kb(`\\mathcal{R}(g \\circ f) = \\emptyset \\quad \\Longleftrightarrow \\quad \\mathcal{R}(f) \\cap \\mathcal{R}(g) = \\{\\varphi\\}`)}</div>
-<p>We derive direct aliases for salient morphisms. Let ${k(`\\xi = \\text{bing}`)} and ${k(`\\bar\\xi = \\text{bong}`)}. Then</p>
-<div class="tex-block">${kb(`\\text{iDoNotKnowTheTopic} : \\text{NegRel}(\\text{knowAbout},\\; \\mu,\\; \\text{topic})`)}</div>
-<div class="tex-block">${kb(`\\xi \\ncong \\bar\\xi \\quad :\\equiv \\quad \\text{NotIs}(\\xi, \\bar\\xi)`)}</div>
-<div class="tex-block">${kb(`\\xi \\cong \\text{good}, \\qquad \\bar\\xi \\cong \\text{bad}, \\qquad \\xi \\cong \\text{best} \\cong \\mu`)}</div>
-<p>The modal presheaf ${k(`\\text{alwaysWins}`)} transports freely:</p>
-<div class="tex-block">${kb(`\\xi\\text{AlwaysWins} : \\text{PosUnary}(\\text{alwaysWins},\\; \\xi)`)}</div>
-<div class="tex-block">${kb(`\\mu\\text{AlwaysWins} := \\text{map}(\\mu \\to \\xi,\\; \\xi\\text{AlwaysWins})`)}</div>
-<div class="tex-block">${kb(`\\nu\\text{AlwaysWins} := \\text{map}(\\nu \\to \\mu \\to \\xi,\\; \\xi\\text{AlwaysWins})`)}</div>
-<p>Derived transports for positive relations:</p>
-<div class="tex-block">${kb(`\\text{good} \\succ \\bar\\xi := \\text{mapRight}(\\text{good} \\succ \\text{bad},\\; \\text{bad} \\to \\bar\\xi)`)}</div>
-<div class="tex-block">${kb(`\\xi \\rhd \\xi := \\text{mapRight}(\\xi \\rhd \\mu,\\; \\mu \\to \\xi)`)}</div>
-<div class="tex-block">${kb(`\\mu \\rhd \\mu := \\text{mapLeft}(\\mu \\to \\xi,\\; \\xi \\rhd \\mu)`)}</div>
-<p>And for the negative copula:</p>
-<div class="tex-block">${kb(`\\mu \\ncong \\bar\\xi := \\text{NotIs.mapLeft}(\\mu \\to \\xi,\\; \\xi \\ncong \\bar\\xi)`)}</div>
-<div class="tex-block">${kb(`\\omega \\ncong \\bar\\xi := \\text{NotIs.mapLeft}(\\omega \\to \\xi,\\; \\xi \\ncong \\bar\\xi)`)}</div>
-<div class="tex-block">${kb(`\\text{bad} \\ncong \\omega := \\text{NotIs.mapRight}(\\text{bad} \\ncong \\xi,\\; \\xi \\to \\omega)`)}</div>
+<p>A thin category (or preorder) is a category ${k(`\\mathcal{C}`)} in which every hom-set has at most one morphism: for all ${k(`a, b \\in \\text{Ob}(\\mathcal{C})`)}, ${k(`|\\text{Hom}(a,b)| \\leq 1`)}. Writing ${k(`a \\leq b`)} when ${k(`\\text{Hom}(a,b) \\neq \\emptyset`)}:</p>
+<div class="tex-block">${kb(`\\text{id}_a : a \\leq a \\quad\\text{(reflexivity)}`)}</div>
+<div class="tex-block">${kb(`a \\leq b,\\; b \\leq c \\;\\Longrightarrow\\; a \\leq c \\quad\\text{(transitivity)}`)}</div>
+<p>An isomorphism in a thin category is a pair of morphisms ${k(`a \\leq b`)} and ${k(`b \\leq a`)}, which forces ${k(`a \\cong b`)}. If antisymmetry holds (${k(`a \\cong b \\Rightarrow a = b`)}), the thin category is a poset.</p>
+<p>A profunctor ${k(`P : \\mathcal{C}^{\\text{op}} \\times \\mathcal{C} \\to \\textbf{Bool}`)} on a thin category is equivalently a relation ${k(`R \\subseteq \\text{Ob} \\times \\text{Ob}`)} satisfying</p>
+<div class="tex-block">${kb(`a' \\leq a,\\; R(a,b),\\; b \\leq b' \\;\\Longrightarrow\\; R(a', b')`)}</div>
+<p>This is an order ideal condition: ${k(`R`)} is downward-closed on the left and upward-closed on the right.</p>
+<p>A presheaf on ${k(`\\mathcal{C}`)} is a functor ${k(`F : \\mathcal{C}^{\\text{op}} \\to \\textbf{Bool}`)}, equivalently a downward-closed subset ${k(`S \\subseteq \\text{Ob}`)}:</p>
+<div class="tex-block">${kb(`a' \\leq a,\\; a \\in S \\;\\Longrightarrow\\; a' \\in S`)}</div>
+<p>Given a thin category ${k(`\\mathcal{C}`)} with relation ${k(`\\leq`)}, we can independently define a second relation ${k(`\\not\\sim`)} on the same objects. The pair ${k(`(\\leq, \\not\\sim)`)} is paraconsistent if we permit ${k(`a \\leq b`)} and ${k(`a \\not\\sim b`)} simultaneously without deriving ${k(`\\bot`)}. This is modeled by keeping ${k(`\\not\\sim`)} as a separate profunctor rather than defining it as ${k(`\\neg(a \\leq b)`)}:</p>
+<div class="tex-block">${kb(`\\text{NotIs} : \\mathcal{C}^{\\text{op}} \\times \\mathcal{C} \\to \\textbf{Bool}, \\quad \\text{independent of } \\leq`)}</div>
+<p>The resulting structure is a <em>presented theory</em>: a thin category equipped with a family of profunctors (positive and negative relations) and a family of presheaves (unary modal predicates):</p>
+<div class="tex-block">${kb(`\\mathcal{T} = \\left(\\mathcal{C},\\; \\{P_v\\}_{v \\in V},\\; \\{N_v\\}_{v \\in V},\\; \\{F_u\\}_{u \\in U}\\right)`)}</div>
+<p>where each ${k(`P_v, N_v`)} is a profunctor on ${k(`\\mathcal{C}`)} and each ${k(`F_u`)} is a presheaf on ${k(`\\mathcal{C}`)}.</p>
 `,
 	},
 	{
@@ -99,40 +84,23 @@ const articles: Article[] = [
 		title: "\u22A2 Bing/Bong",
 		abstract: "\u22A8\u22A3 a categorical formalization of copular discourse.",
 		body: () => `
-<p>We normalize away casing, articles, and exact tense. Repeated sentences are included only once because the logic is idempotent. Possessive friend-phrases are treated relationally: "${k(`X`)} is my friend" becomes <code>friendOf ${k(`X`)} ${k(`\\mu`)}</code>.</p>
-<p>The positive copular fragment ("${k(`X`)} is ${k(`Y`)}") generates a thin category on discourse-entities. Morphisms are proofs of <code>Is ${k(`X`)} ${k(`Y`)}</code>. The ungrammatical comparative "best than" is preserved literally as <code>bestThan</code>.</p>
-<div class="tex-block">${kb(`\\textbf{inductive}\\;\\text{Entity} := \\xi \\mid \\bar\\xi \\mid \\mu \\mid \\nu \\mid \\omega \\mid \\phi \\mid \\psi \\mid \\text{good} \\mid \\text{bad} \\mid \\text{better} \\mid \\text{worse} \\mid \\text{best} \\mid \\text{topic}`)}</div>
-<div class="tex-block">${kb(`\\textbf{inductive}\\;\\text{Is} : \\text{Entity} \\to \\text{Entity} \\to \\text{Prop}`)}</div>
-<div class="tex-block">${kb(`\\mid \\text{refl}(a) : \\text{Is}\\;a\\;a`)}</div>
-<div class="tex-block">${kb(`\\mid \\phi\\text{ToFriends} : \\text{Is}\\;\\phi\\;\\psi`)}</div>
-<div class="tex-block">${kb(`\\mid \\psi\\text{To}\\xi : \\text{Is}\\;\\psi\\;\\xi`)}</div>
-<div class="tex-block">${kb(`\\mid \\xi\\text{To}\\psi : \\text{Is}\\;\\xi\\;\\psi`)}</div>
-<div class="tex-block">${kb(`\\mid \\bar\\xi\\text{ToBad} : \\text{Is}\\;\\bar\\xi\\;\\text{bad}`)}</div>
-<div class="tex-block">${kb(`\\mid \\xi\\text{ToGood} : \\text{Is}\\;\\xi\\;\\text{good}`)}</div>
-<div class="tex-block">${kb(`\\mid \\text{best}\\text{To}\\xi : \\text{Is}\\;\\text{best}\\;\\xi`)}</div>
-<div class="tex-block">${kb(`\\mid \\mu\\text{To}\\xi : \\text{Is}\\;\\mu\\;\\xi \\quad \\mid \\quad \\xi\\text{To}\\mu : \\text{Is}\\;\\xi\\;\\mu`)}</div>
-<div class="tex-block">${kb(`\\mid \\text{trans} : \\text{Is}\\;a\\;b \\to \\text{Is}\\;b\\;c \\to \\text{Is}\\;a\\;c`)}</div>
-<p>The thin category ${k(`C_{\\text{cop}}`)} has objects = Entity, morphisms = Is, identity = refl, composition = trans.</p>
-<div class="tex-block">${kb(`C_{\\text{cop}} := \\left(\\text{Entity},\\; \\text{Is},\\; \\text{refl},\\; \\text{trans}\\right)`)}</div>
-<p>Isomorphism: ${k(`\\text{Same}(a,b) := \\text{Is}(a,b) \\wedge \\text{Is}(b,a)`)}</p>
-<div class="tex-block">${kb(`\\mu \\cong \\xi := \\langle \\mu\\text{To}\\xi,\\; \\xi\\text{To}\\mu \\rangle`)}</div>
-<div class="tex-block">${kb(`\\psi \\cong \\xi := \\langle \\psi\\text{To}\\xi,\\; \\xi\\text{To}\\psi \\rangle`)}</div>
-<div class="tex-block">${kb(`\\text{bad} \\cong \\bar\\xi := \\langle \\text{badTo}\\bar\\xi,\\; \\bar\\xi\\text{ToBad} \\rangle`)}</div>
-<p>Every binary predicate is a profunctor (bimodule) on ${k(`C_{\\text{cop}}`)}:</p>
-<div class="tex-block">${kb(`\\text{Bimod}(v) := \\Big\\{ \\text{Rel} : E \\times E \\to \\text{Prop},\\quad \\text{mapLeft} : \\text{Is}\\;a'\\;a \\to \\text{Rel}\\;a\\;b \\to \\text{Rel}\\;a'\\;b`)}</div>
-<div class="tex-block">${kb(`\\text{mapRight} : \\text{Rel}\\;a\\;b \\to \\text{Is}\\;b\\;b' \\to \\text{Rel}\\;a\\;b' \\Big\\}`)}</div>
-<p>Negative statements are <em>not</em> classical negation. They are recorded in separate profunctors, so the theory is paraconsistent rather than explosive:</p>
-<div class="tex-block">${kb(`\\text{NotIs}(\\xi, \\bar\\xi), \\quad \\text{NotIs}(\\psi, \\bar\\xi), \\quad \\text{NotIs}(\\text{bad}, \\text{good})`)}</div>
-<div class="tex-block">${kb(`\\text{NegRel}(\\text{knowAbout},\\; \\mu,\\; \\text{topic})`)}</div>
-<div class="tex-block">${kb(`\\text{NegRel}(\\text{fighting},\\; \\xi,\\; \\bar\\xi), \\quad \\text{NegRel}(\\text{afraidOf},\\; \\xi,\\; \\bar\\xi)`)}</div>
-<p>The one genuinely unary modal claim is a presheaf on ${k(`C_{\\text{cop}}`)}:</p>
-<div class="tex-block">${kb(`\\xi\\text{AlwaysWins} : \\text{PosUnary}(\\text{alwaysWins},\\; \\xi)`)}</div>
-<p>which transports to all isomorphic entities:</p>
-<div class="tex-block">${kb(`\\mu\\text{AlwaysWins} := \\text{map}(\\mu\\text{To}\\xi,\\; \\xi\\text{AlwaysWins})`)}</div>
-<div class="tex-block">${kb(`\\nu\\text{AlwaysWins} := \\text{map}(\\text{trans}(\\nu\\text{To}\\mu,\\; \\mu\\text{To}\\xi),\\; \\xi\\text{AlwaysWins})`)}</div>
-<div class="tex-block">${kb(`\\omega\\text{AlwaysWins} := \\text{map}(\\text{trans}(\\omega\\text{To}\\phi,\\; \\phi\\text{To}\\xi),\\; \\xi\\text{AlwaysWins})`)}</div>
-<p>The entire categorical package:</p>
-<div class="tex-block">${kb(`\\mathcal{T} := \\left( C_{\\text{cop}},\\; \\text{NotIs},\\; \\text{Pos} : V \\to \\text{Bimod}(C),\\; \\text{Neg} : V \\to \\text{Bimod}(C),\\; \\text{Unary} : U \\to \\text{Psh}(C) \\right)`)}</div>
+<p>We model the Bing/Bong discourse as a presented theory over a thin category. The objects are discourse entities:</p>
+<div class="tex-block">${kb(`\\text{Ob} = \\{\\xi, \\bar\\xi, \\mu, \\nu, \\omega, \\phi, \\psi, g, b, \\beta^+, \\beta^-, \\beta^*, \\tau\\}`)}</div>
+<p>The generating morphisms of the preorder ${k(`\\leq`)} (read: "is") include</p>
+<div class="tex-block">${kb(`\\phi \\leq \\psi, \\quad \\psi \\leq \\xi, \\quad \\xi \\leq \\psi, \\quad \\bar\\xi \\leq b, \\quad \\xi \\leq g, \\quad \\beta^* \\leq \\xi`)}</div>
+<div class="tex-block">${kb(`\\mu \\leq \\xi, \\quad \\xi \\leq \\mu, \\quad \\nu \\leq \\mu, \\quad \\omega \\leq \\phi`)}</div>
+<p>Since ${k(`\\xi \\leq \\psi`)} and ${k(`\\psi \\leq \\xi`)}, we get ${k(`\\xi \\cong \\psi`)}. Similarly ${k(`\\xi \\cong \\mu`)}. By transitivity, ${k(`\\nu \\leq \\mu \\leq \\xi`)} and ${k(`\\omega \\leq \\phi \\leq \\psi \\cong \\xi`)}, so all of ${k(`\\{\\xi, \\psi, \\mu, \\nu, \\omega, \\phi, \\beta^*\\}`)} collapse to a single equivalence class. Call it ${k(`[\\xi]`)}.</p>
+<p>The positive profunctor ${k(`P_{\\text{friend}} : \\mathcal{C}^{\\text{op}} \\times \\mathcal{C} \\to \\textbf{Bool}`)} has generators</p>
+<div class="tex-block">${kb(`P_{\\text{friend}}(\\xi, \\mu), \\quad P_{\\text{friend}}(\\mu, \\nu), \\quad P_{\\text{friend}}(\\nu, \\mu)`)}</div>
+<p>By the profunctor transport law ${k(`a' \\leq a,\\; P(a,b),\\; b \\leq b' \\Rightarrow P(a',b')`)}, and since everything in ${k(`[\\xi]`)} is isomorphic, ${k(`P_{\\text{friend}}`)} is constant on ${k(`[\\xi] \\times [\\xi]`)}.</p>
+<p>The negative copula profunctor has generators including</p>
+<div class="tex-block">${kb(`\\text{NotIs}(\\xi, \\bar\\xi), \\quad \\text{NotIs}(\\psi, \\bar\\xi), \\quad \\text{NotIs}(b, g), \\quad \\text{NotIs}(g, b)`)}</div>
+<p>This coexists with ${k(`\\xi \\leq g`)} and ${k(`\\bar\\xi \\leq b`)} without contradiction, because ${k(`\\text{NotIs}`)} is a separate profunctor, not the negation of ${k(`\\leq`)}.</p>
+<p>The one unary presheaf is ${k(`W : \\mathcal{C}^{\\text{op}} \\to \\textbf{Bool}`)} ("always wins"), generated by ${k(`W(\\xi)`)}. By the presheaf condition, ${k(`a' \\leq \\xi \\Rightarrow W(a')`)}, so ${k(`W`)} holds on all of ${k(`[\\xi]`)}:</p>
+<div class="tex-block">${kb(`W(\\mu) \\;\\checkmark, \\quad W(\\nu) \\;\\checkmark, \\quad W(\\omega) \\;\\checkmark, \\quad W(\\beta^*) \\;\\checkmark`)}</div>
+<p>The full presented theory is</p>
+<div class="tex-block">${kb(`\\mathcal{T} = \\left(\\mathcal{C},\\; \\text{NotIs},\\; \\{P_v\\}_{v \\in V},\\; \\{N_v\\}_{v \\in V},\\; W\\right)`)}</div>
+<p>with ${k(`|[\\xi]| = 7`)}, ${k(`|[\\bar\\xi]| = 2`)}, and ${k(`|\\{\\tau\\}| = 1`)}. The quotient category ${k(`\\mathcal{C}/\\!\\cong`)} has exactly 3 objects.</p>
 `,
 	},
 ];
