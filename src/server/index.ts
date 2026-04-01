@@ -15,17 +15,37 @@ const CSS_RESET_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 10;
 
-function extractCss(text: string): { chat: string; css: string | null } {
-	const cssBlockRegex = /```css\s*\n([\s\S]*?)```/g;
-	let css = "";
-	let chat = text;
+interface KimiAction {
+	chat: string;
+	css: string | null;
+	edits: { id: string; content: string }[];
+}
 
+function parseKimiResponse(text: string): KimiAction {
+	let chat = text;
+	let css = "";
+	const edits: { id: string; content: string }[] = [];
+
+	// Extract CSS blocks
+	const cssBlockRegex = /```css\s*\n([\s\S]*?)```/g;
 	for (const match of text.matchAll(cssBlockRegex)) {
 		css += match[1].trim() + "\n";
 		chat = chat.replace(match[0], "").trim();
 	}
 
-	return { chat, css: css.trim() || null };
+	// Extract edit blocks: ```edit id=<msgId>\n<new content>\n```
+	const editBlockRegex = /```edit\s+id=(\S+)\s*\n([\s\S]*?)```/g;
+	for (const match of text.matchAll(editBlockRegex)) {
+		edits.push({ id: match[1], content: match[2].trim() });
+		chat = chat.replace(match[0], "").trim();
+	}
+
+	return { chat, css: css.trim() || null, edits };
+}
+
+function buildContext(messages: ChatMessage[]): string {
+	const recentIds = messages.slice(-10).map((m) => `  ${m.id} (${m.user}): ${m.content}`).join("\n");
+	return `[Context: You are in a live chatroom at gnome.science. Users have names shown before their messages. Recent message IDs for editing:\n${recentIds}\n\nYou can use these tools in your response:\n- Write CSS in a \`\`\`css block to restyle the page\n- Edit a message with \`\`\`edit id=<message_id> block containing the new text\n- Or just chat normally]`;
 }
 
 export class Chat extends Server<Env> {
@@ -65,7 +85,6 @@ export class Chat extends Server<Env> {
 			.exec(`SELECT * FROM messages`)
 			.toArray() as ChatMessage[];
 
-		// Load custom CSS
 		const cssRow = this.ctx.storage.sql
 			.exec(`SELECT value FROM kv WHERE key = 'custom_css'`)
 			.toArray();
@@ -80,7 +99,6 @@ export class Chat extends Server<Env> {
 			this.cssUpdatedAt = Number(tsRow[0].value);
 		}
 
-		// Check 24h reset
 		this.maybeResetCss();
 	}
 
@@ -160,9 +178,12 @@ export class Chat extends Server<Env> {
 			content: m.role === "assistant" ? m.content : `${m.user}: ${m.content}`,
 		}));
 
+		// Inject context about the environment as the first user message
+		const contextMsg = { role: "user" as const, content: buildContext(recentMessages) };
+
 		const ai = (this.env as any).AI;
 		const response = await ai.run("@cf/moonshotai/kimi-k2.5", {
-			messages: context,
+			messages: [contextMsg, ...context],
 			max_tokens: 1024,
 		});
 
@@ -193,8 +214,9 @@ export class Chat extends Server<Env> {
 
 				try {
 					const rawResponse = await this.callKimi(this.messages);
-					const { chat, css } = extractCss(rawResponse);
+					const { chat, css, edits } = parseKimiResponse(rawResponse);
 
+					// Send Kimi's chat reply
 					if (chat) {
 						const kimiMessage: ChatMessage = {
 							id: `kimi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -206,9 +228,20 @@ export class Chat extends Server<Env> {
 						this.broadcastMessage({ type: "add", ...kimiMessage });
 					}
 
+					// Apply CSS changes
 					if (css) {
 						this.saveCss(css);
 						this.broadcastMessage({ type: "css", css });
+					}
+
+					// Apply message edits
+					for (const edit of edits) {
+						const existing = this.messages.find((m) => m.id === edit.id);
+						if (existing) {
+							const updated: ChatMessage = { ...existing, content: edit.content };
+							this.saveMessage(updated);
+							this.broadcastMessage({ type: "update", ...updated });
+						}
 					}
 				} catch (err) {
 					console.error("Kimi AI error:", err);

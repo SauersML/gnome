@@ -7,23 +7,12 @@
 }
 
 :root {
-	--px: 14px;
-
-	--deep: #070d07;
-	--earth-1: #0c180e;
-	--earth-2: #112015;
-	--earth-3: #17291a;
-	--earth-4: #1d3322;
-	--earth-5: #243d2a;
-	--earth-6: #2b4832;
-	--moss-1: #1a3a22;
-	--moss-2: #224a2c;
-	--moss-3: #2d5a36;
-	--bark: #3d6840;
-	--fern: #4a7a4a;
-	--sage: #7da87a;
 	--mist: #b5cfac;
 	--light: #dae8d2;
+	--sage: #7da87a;
+	--fern: #4a7a4a;
+	--moss: #2d5a36;
+	--earth: #1d3322;
 	--glow: #6aec78;
 	--gold: #e2b84a;
 	--amber: #cf9636;
@@ -37,154 +26,27 @@ html, body {
 	line-height: 1.6;
 	-webkit-font-smoothing: antialiased;
 	overflow: hidden;
+	background: #0a140c;
 }
 
-/* ========================================
-   PIXEL TEXTURE — complex layered mosaic
-   ======================================== */
-
-body {
-	background-color: var(--deep);
-}
-
-/* Layer 1: vertical color columns (period: 8 blocks = 112px) */
-body::before {
-	content: "";
+/* ---- Pixel canvas ---- */
+.pixel-bg {
 	position: fixed;
 	inset: 0;
+	width: 100%;
+	height: 100%;
 	z-index: 0;
-	pointer-events: none;
-	background-image:
-		/* ---- grid lines ---- */
-		linear-gradient(0deg,
-			rgba(0,0,0,0.25) 0px, rgba(0,0,0,0.25) 1px, transparent 1px, transparent var(--px)
-		),
-		linear-gradient(90deg,
-			rgba(0,0,0,0.25) 0px, rgba(0,0,0,0.25) 1px, transparent 1px, transparent var(--px)
-		),
-
-		/* ---- vertical strips: 8 shades cycling (112px period) ---- */
-		repeating-linear-gradient(90deg,
-			var(--earth-1) 0 var(--px),
-			var(--earth-3) var(--px) calc(var(--px) * 2),
-			var(--earth-2) calc(var(--px) * 2) calc(var(--px) * 3),
-			var(--earth-5) calc(var(--px) * 3) calc(var(--px) * 4),
-			var(--earth-1) calc(var(--px) * 4) calc(var(--px) * 5),
-			var(--earth-4) calc(var(--px) * 5) calc(var(--px) * 6),
-			var(--earth-2) calc(var(--px) * 6) calc(var(--px) * 7),
-			var(--earth-6) calc(var(--px) * 7) calc(var(--px) * 8)
-		),
-
-		/* ---- horizontal modulation: 10 rows cycling (140px), offset ---- */
-		repeating-linear-gradient(0deg,
-			rgba(26, 58, 34, 0.35) 0 var(--px),
-			transparent var(--px) calc(var(--px) * 2),
-			rgba(13, 30, 18, 0.4) calc(var(--px) * 2) calc(var(--px) * 3),
-			rgba(45, 90, 54, 0.18) calc(var(--px) * 3) calc(var(--px) * 4),
-			transparent calc(var(--px) * 4) calc(var(--px) * 5),
-			rgba(29, 51, 34, 0.3) calc(var(--px) * 5) calc(var(--px) * 6),
-			rgba(55, 100, 60, 0.12) calc(var(--px) * 6) calc(var(--px) * 7),
-			transparent calc(var(--px) * 7) calc(var(--px) * 8),
-			rgba(19, 42, 25, 0.35) calc(var(--px) * 8) calc(var(--px) * 9),
-			rgba(36, 72, 42, 0.2) calc(var(--px) * 9) calc(var(--px) * 10)
-		),
-
-		/* ---- diagonal disruption: breaks the horizontal/vertical regularity ---- */
-		repeating-linear-gradient(135deg,
-			transparent 0 calc(var(--px) * 3),
-			rgba(42, 80, 48, 0.12) calc(var(--px) * 3) calc(var(--px) * 4),
-			transparent calc(var(--px) * 4) calc(var(--px) * 9),
-			rgba(16, 36, 22, 0.18) calc(var(--px) * 9) calc(var(--px) * 10),
-			transparent calc(var(--px) * 10) calc(var(--px) * 14)
-		),
-
-		/* ---- depth pools: large soft light patches ---- */
-		radial-gradient(ellipse 40% 35% at 25% 40%, rgba(42, 90, 42, 0.12), transparent),
-		radial-gradient(ellipse 35% 45% at 70% 65%, rgba(30, 70, 38, 0.1), transparent),
-		radial-gradient(ellipse 50% 30% at 50% 15%, rgba(22, 55, 30, 0.08), transparent);
-
-	background-size:
-		var(--px) var(--px),
-		var(--px) var(--px),
-		calc(var(--px) * 8) auto,
-		auto calc(var(--px) * 10),
-		calc(var(--px) * 14) calc(var(--px) * 14),
-		100% 100%,
-		100% 100%,
-		100% 100%;
+	display: block;
 }
 
-/* ========================================
-   SHIMMER — bright pixels that appear/vanish
-   stepped, not smooth
-   ======================================== */
-
-body::after {
-	content: "";
-	position: fixed;
-	inset: 0;
-	z-index: 0;
-	pointer-events: none;
-
-	background-image:
-		/* sparse green glow bands — horizontal (period: 280px) */
-		repeating-linear-gradient(0deg,
-			transparent 0, transparent calc(var(--px) * 5),
-			rgba(106, 236, 120, 0.05) calc(var(--px) * 5), rgba(106, 236, 120, 0.05) calc(var(--px) * 6),
-			transparent calc(var(--px) * 6), transparent calc(var(--px) * 13),
-			rgba(106, 236, 120, 0.04) calc(var(--px) * 13), rgba(106, 236, 120, 0.04) calc(var(--px) * 14),
-			transparent calc(var(--px) * 14), transparent calc(var(--px) * 20)
-		),
-		/* sparse green glow bands — vertical (period: 224px) */
-		repeating-linear-gradient(90deg,
-			transparent 0, transparent calc(var(--px) * 3),
-			rgba(106, 236, 120, 0.05) calc(var(--px) * 3), rgba(106, 236, 120, 0.05) calc(var(--px) * 4),
-			transparent calc(var(--px) * 4), transparent calc(var(--px) * 11),
-			rgba(106, 236, 120, 0.04) calc(var(--px) * 11), rgba(106, 236, 120, 0.04) calc(var(--px) * 12),
-			transparent calc(var(--px) * 12), transparent calc(var(--px) * 16)
-		),
-		/* sparse gold bands — horizontal (period: 322px, offset) */
-		repeating-linear-gradient(0deg,
-			transparent 0, transparent calc(var(--px) * 9),
-			rgba(226, 184, 74, 0.04) calc(var(--px) * 9), rgba(226, 184, 74, 0.04) calc(var(--px) * 10),
-			transparent calc(var(--px) * 10), transparent calc(var(--px) * 23)
-		),
-		/* sparse gold bands — vertical (period: 252px, offset) */
-		repeating-linear-gradient(90deg,
-			transparent 0, transparent calc(var(--px) * 7),
-			rgba(226, 184, 74, 0.04) calc(var(--px) * 7), rgba(226, 184, 74, 0.04) calc(var(--px) * 8),
-			transparent calc(var(--px) * 8), transparent calc(var(--px) * 18)
-		);
-
-	background-size:
-		auto calc(var(--px) * 20),
-		calc(var(--px) * 16) auto,
-		auto calc(var(--px) * 23),
-		calc(var(--px) * 18) auto;
-
-	animation: shimmer 16s steps(8) infinite;
-}
-
-@keyframes shimmer {
-	0%   { background-position: 0 0, 0 0, 0 calc(var(--px) * 4), calc(var(--px) * 2) 0; }
-	100% { background-position:
-		0 calc(var(--px) * 20),
-		calc(var(--px) * 16) 0,
-		0 calc(var(--px) * 27),
-		calc(var(--px) * 20) 0;
-	}
-}
-
-/* ========================================
-   Content
-   ======================================== */
-
+/* ---- Root ---- */
 #root {
 	height: 100%;
 	position: relative;
 	z-index: 1;
 }
 
+/* ---- Layout ---- */
 .app {
 	display: flex;
 	flex-direction: column;
@@ -212,14 +74,14 @@ body::after {
 	line-height: 1;
 	letter-spacing: -0.02em;
 	text-shadow:
-		0 0 24px rgba(106, 236, 120, 0.25),
-		0 0 48px rgba(106, 236, 120, 0.08);
+		0 0 24px rgba(106, 236, 120, 0.3),
+		0 0 48px rgba(106, 236, 120, 0.1);
 }
 
 .brand .dot {
 	color: var(--gold);
 	text-shadow:
-		0 0 18px rgba(226, 184, 74, 0.45),
+		0 0 18px rgba(226, 184, 74, 0.5),
 		0 0 36px rgba(226, 184, 74, 0.15);
 }
 
@@ -252,18 +114,11 @@ body::after {
 
 /* ---- Divider ---- */
 .divider {
-	height: var(--px);
+	height: 2px;
 	flex-shrink: 0;
 	margin-right: 80px;
-	background: repeating-linear-gradient(90deg,
-		var(--moss-1) 0, var(--moss-1) var(--px),
-		var(--earth-3) var(--px), var(--earth-3) calc(var(--px) * 2),
-		var(--moss-2) calc(var(--px) * 2), var(--moss-2) calc(var(--px) * 3),
-		var(--earth-1) calc(var(--px) * 3), var(--earth-1) calc(var(--px) * 4),
-		var(--moss-3) calc(var(--px) * 4), var(--moss-3) calc(var(--px) * 5),
-		var(--earth-4) calc(var(--px) * 5), var(--earth-4) calc(var(--px) * 6),
-		var(--earth-2) calc(var(--px) * 6), var(--earth-2) calc(var(--px) * 7)
-	);
+	background: var(--moss);
+	opacity: 0.5;
 }
 
 /* ---- Messages ---- */
@@ -314,18 +169,8 @@ body::after {
 	word-wrap: break-word;
 }
 
-.msg-self {
-	border-left: var(--px) solid var(--moss-2);
-	padding-left: 12px;
-}
-
 .msg-self .msg-body {
 	color: var(--light);
-}
-
-.msg-assistant {
-	border-left: var(--px) solid var(--amber);
-	padding-left: 12px;
 }
 
 .msg-assistant .msg-who {
@@ -349,7 +194,7 @@ body::after {
 	font-family: "Syne", sans-serif;
 	font-size: clamp(20px, 3.5vw, 28px);
 	font-weight: 500;
-	color: var(--earth-6);
+	color: var(--fern);
 	line-height: 1.35;
 	max-width: 320px;
 }
@@ -365,13 +210,12 @@ body::after {
 .compose-form {
 	display: flex;
 	align-items: stretch;
-	border-bottom: 2px solid var(--earth-4);
-	transition: border-color 0.15s steps(3), box-shadow 0.15s steps(3);
+	border-bottom: 2px solid var(--earth);
+	transition: border-color 0.15s steps(3);
 }
 
 .compose-form:focus-within {
-	border-color: var(--moss-3);
-	box-shadow: 0 3px 24px -6px rgba(106, 236, 120, 0.1);
+	border-color: var(--moss);
 }
 
 .compose-input {
@@ -387,7 +231,7 @@ body::after {
 }
 
 .compose-input::placeholder {
-	color: var(--earth-5);
+	color: var(--earth);
 	font-weight: 300;
 }
 
@@ -402,7 +246,7 @@ body::after {
 	text-transform: uppercase;
 	cursor: pointer;
 	padding: 14px 0 14px 16px;
-	transition: color 0.1s steps(2), text-shadow 0.1s steps(2);
+	transition: color 0.1s steps(2);
 }
 
 .compose-send:hover {
@@ -414,16 +258,14 @@ body::after {
 	margin-top: 8px;
 	font-size: 11px;
 	font-weight: 500;
-	color: var(--earth-5);
+	color: var(--earth);
 	letter-spacing: 0.03em;
 }
 
-/* ---- Animations ---- */
 @keyframes appear {
 	to { opacity: 1; }
 }
 
-/* ---- Responsive ---- */
 @media (max-width: 768px) {
 	.app {
 		margin-left: 0;
