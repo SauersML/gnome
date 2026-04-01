@@ -72,6 +72,27 @@ const articles: Article[] = [
 	},
 ];
 
+const USERNAME_COLORS = [
+	"#e2b84a", // gold (default)
+	"#6aec78", // green
+	"#ec6a8b", // rose
+	"#6ab8ec", // sky
+	"#c46aec", // purple
+	"#ec9f6a", // orange
+	"#6aecd4", // teal
+	"#ecdb6a", // yellow
+	"#8b9fec", // periwinkle
+	"#ec6a6a", // coral
+];
+
+function getUserColor(username: string): string {
+	let hash = 0;
+	for (let i = 0; i < username.length; i++) {
+		hash = ((hash << 5) - hash + username.charCodeAt(i)) | 0;
+	}
+	return USERNAME_COLORS[Math.abs(hash) % USERNAME_COLORS.length];
+}
+
 function useKimiCss() {
 	const styleRef = useRef<HTMLStyleElement | null>(null);
 
@@ -137,14 +158,16 @@ function App() {
 			if (message.type === "css") {
 				applyCss(message.css);
 			} else if (message.type === "add") {
+				const msg: ChatMessage = { id: message.id, content: message.content, user: message.user, role: message.role };
 				setMessages((prev) => {
-					const exists = prev.some((m) => m.id === message.id);
-					if (!exists) return [...prev, message];
-					return prev.map((m) => (m.id === message.id ? message : m));
+					const exists = prev.some((m) => m.id === msg.id);
+					if (!exists) return [...prev, msg];
+					return prev.map((m) => (m.id === msg.id ? msg : m));
 				});
 			} else if (message.type === "update") {
+				const msg: ChatMessage = { id: message.id, content: message.content, user: message.user, role: message.role };
 				setMessages((prev) =>
-					prev.map((m) => (m.id === message.id ? message : m)),
+					prev.map((m) => (m.id === msg.id ? msg : m)),
 				);
 			} else {
 				setMessages(message.messages);
@@ -203,7 +226,7 @@ function App() {
 									key={msg.id}
 									className={`msg ${msg.user === name ? "msg-self" : ""} ${msg.role === "assistant" ? "msg-assistant" : ""} ${i === messages.length - 1 ? "msg-new" : ""}`}
 								>
-									<span className="msg-who">{msg.user}</span>
+									<span className="msg-who" style={{ color: msg.role === "assistant" ? undefined : getUserColor(msg.user) }}>{msg.user}</span>
 									<span className="msg-body">{msg.content}</span>
 								</div>
 							))}

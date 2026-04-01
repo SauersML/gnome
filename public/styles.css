@@ -54,6 +54,8 @@ html, body {
 	width: 100%;
 	overflow: hidden;
 	padding-left: clamp(24px, 8vw, 14%);
+	position: relative;
+	z-index: 1;
 }
 
 .app {
@@ -325,6 +327,8 @@ html, body {
 	padding: clamp(32px, 6vh, 64px) clamp(20px, 4vw, 40px);
 	position: relative;
 	z-index: 1;
+	height: 100%;
+	overflow-y: auto;
 }
 
 .article-back {
