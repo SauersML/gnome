@@ -91,7 +91,7 @@ function makePixel(col: number, row: number): PixelProps {
 	};
 }
 
-const FRINGE = 7;
+const HALO = 10; // how far the darkening spreads from text (in grid cells)
 
 export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	const ctx = canvas.getContext("2d")!;
@@ -263,36 +263,28 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				g = Math.min(255, Math.max(0, g)) | 0;
 				b = Math.min(255, Math.max(0, b)) | 0;
 
-				// blacken under actual text, fringe outside
+				// soft organic darkening near text
+				// perturb this pixel's position with noise so shapes aren't rectangular
+				const nx1 = ((hash(col, row, 500) % 2000) - 1000) / 1000; // -1 to 1
+				const nx2 = ((hash(col, row, 600) % 2000) - 1000) / 1000;
+				const pCol = col + nx1 * 2.5;
+				const pRow = row + nx2 * 2.5;
+
 				let darken = 1.0;
 				for (let ri = 0; ri < regions.length; ri++) {
 					const reg = regions[ri];
-					// distance outside the rect (0 = on edge, negative = inside, positive = outside)
-					const dLeft = reg.c0 - col;
-					const dRight = col - reg.c1;
-					const dTop = reg.r0 - row;
-					const dBottom = row - reg.r1;
-					// positive = outside, how far from nearest edge
-					const dOut = Math.max(dLeft, dRight, dTop, dBottom);
+					// euclidean distance from perturbed point to rect
+					const dx = Math.max(reg.c0 - pCol, 0, pCol - reg.c1);
+					const dy = Math.max(reg.r0 - pRow, 0, pRow - reg.r1);
+					const dist = Math.sqrt(dx * dx + dy * dy);
 
-					if (dOut <= 0) {
-						// inside text rect — full black
-						darken = 0;
-					} else if (dOut < FRINGE) {
-						// outside but within fringe — fade out with noise
-						const t = 1.0 - dOut / FRINGE; // 1 at edge, 0 at fringe boundary
+					if (dist >= HALO) continue;
 
-						const n1 = (Math.abs(hash(col, row, 777 + ri)) % 1000) / 1000;
-						const n2 = (Math.abs(hash(col * 3 + 7, row * 3 + 13, 999 + ri)) % 1000) / 1000;
-						const noise = n1 * 0.6 + n2 * 0.4;
-
-						// near the text: almost certainly dark. far out: probably not
-						const threshold = t - noise * 0.35;
-						if (threshold > 0) {
-							const strength = Math.min(1.0, threshold * 1.5);
-							darken = Math.min(darken, 1.0 - strength);
-						}
-					}
+					// gaussian-ish falloff: strong near text, fading out
+					const t = dist / HALO; // 0 at text, 1 at edge of halo
+					const strength = 1.0 - t * t; // quadratic falloff (softer than linear)
+					const d = 1.0 - strength * 0.95; // darkest = 0.05 (nearly black, hint of texture)
+					darken = Math.min(darken, d);
 				}
 
 				r = (r * darken) | 0;
