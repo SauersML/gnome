@@ -425,25 +425,29 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		const root = document.getElementById("root");
 		if (!root) return [];
 		const rects: Rect[] = [];
-		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 		const range = document.createRange();
+
+		// Walk text nodes and measure each word individually for tight rects
+		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 		let node: Text | null;
 		while ((node = walker.nextNode() as Text | null)) {
 			const txt = node.textContent;
 			if (!txt || !txt.trim()) continue;
-			// Trim range to actual non-whitespace characters to avoid trailing space rects
-			const start = txt.search(/\S/);
-			const end = txt.search(/\S\s*$/) + 1;
-			if (start < 0 || end <= start) continue;
-			range.setStart(node, start);
-			range.setEnd(node, end);
-			const crs = range.getClientRects();
-			for (let i = 0; i < crs.length; i++) {
-				const r = crs[i];
-				if (r.width < 1 || r.height < 1) continue;
-				rects.push({ c0: r.left / PX, r0: r.top / PX, c1: r.right / PX, r1: r.bottom / PX });
+			// Find each contiguous run of non-whitespace and measure it
+			const wordRegex = /\S+/g;
+			let match: RegExpExecArray | null;
+			while ((match = wordRegex.exec(txt)) !== null) {
+				range.setStart(node, match.index);
+				range.setEnd(node, match.index + match[0].length);
+				const crs = range.getClientRects();
+				for (let i = 0; i < crs.length; i++) {
+					const r = crs[i];
+					if (r.width < 1 || r.height < 1) continue;
+					rects.push({ c0: r.left / PX, r0: r.top / PX, c1: r.right / PX, r1: r.bottom / PX });
+				}
 			}
 		}
+		// Input elements
 		const inputs = root.querySelectorAll("input") as NodeListOf<HTMLInputElement>;
 		for (let i = 0; i < inputs.length; i++) {
 			const r = inputs[i].getBoundingClientRect();
