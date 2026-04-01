@@ -478,16 +478,8 @@ export class Chat extends Server<Env> {
 
 		const apiKey = (this.env as any).OPENROUTER_API_KEY;
 		if (!apiKey) {
-			// Fallback to Cloudflare AI binding
-			const ai = (this.env as any).AI;
-			if (!ai) {
-				console.error("No OPENROUTER_API_KEY and no AI binding");
-				return null;
-			}
-			console.log("Calling Kimi via CF AI with", messages.length, "messages");
-			const response = await ai.run("@cf/moonshotai/kimi-k2.5", { messages, max_tokens: 20480 });
-			const msg = response?.choices?.[0]?.message;
-			return response?.response ?? msg?.content ?? msg?.reasoning_content ?? msg?.reasoning ?? null;
+			console.error("No OPENROUTER_API_KEY set");
+			return null;
 		}
 
 		console.log("Calling Kimi via OpenRouter with", messages.length, "messages");
