@@ -262,8 +262,8 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 					const dMin = Math.min(col - reg.c0, reg.c1 - col, row - reg.r0, reg.r1 - row);
 
 					if (dMin > FRINGE) {
-						// fully inside
-						darken = Math.min(darken, 0.12);
+						// fully inside — black
+						darken = 0;
 					} else if (dMin > -FRINGE) {
 						// fringe zone: smooth ramp + noise for organic edge
 						const t = (dMin + FRINGE) / (2 * FRINGE); // 0 at outer edge, 1 at inner
@@ -271,16 +271,14 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 						// multi-octave noise for irregular boundary
 						const n1 = (Math.abs(hash(col, row, 777 + ri)) % 1000) / 1000;
 						const n2 = (Math.abs(hash(col * 3 + 7, row * 3 + 13, 999 + ri)) % 1000) / 1000;
-						const noise = n1 * 0.6 + n2 * 0.4; // blend two noise scales
+						const noise = n1 * 0.6 + n2 * 0.4;
 
 						// shift the threshold by noise so the boundary wobbles
 						const threshold = t * 1.4 - noise * 0.4;
 
 						if (threshold > 0) {
-							// gradual darkening: ramp from 1.0 down to 0.12
 							const strength = Math.min(1.0, threshold);
-							const d = 1.0 - strength * 0.88; // 1.0 -> 0.12
-							darken = Math.min(darken, d);
+							darken = Math.min(darken, 1.0 - strength); // ramps to 0 (black)
 						}
 					}
 				}
