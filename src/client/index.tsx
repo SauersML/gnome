@@ -236,7 +236,7 @@ function App() {
 									className={`msg ${msg.user === name ? "msg-self" : ""} ${msg.role === "assistant" ? "msg-assistant" : ""} ${i === messages.length - 1 ? "msg-new" : ""}`}
 								>
 									<span className="msg-who" style={{ color: msg.role === "assistant" ? undefined : getUserColor(msg.user) }}>{msg.user}</span>
-									<span className="msg-body">{msg.content}</span>
+									<span className="msg-body" dangerouslySetInnerHTML={{ __html: msg.role === "assistant" ? msg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/_(.*?)_/g, "<em>$1</em>").replace(/\n/g, "<br>") : msg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") }} />
 								</div>
 							))}
 							<div ref={messagesEnd} />

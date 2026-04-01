@@ -8,6 +8,8 @@ import {
 import type { ChatMessage, Message, Page } from "../shared";
 
 const KIMI_PATTERN = /\bkimi\b|\bk2\.?5\b/i;
+const COGITO_PATTERN = /\bcogito\b/i;
+const CLAUDE_PATTERN = /\bclaude\b/i;
 
 const CSS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -72,35 +74,52 @@ function parseKimiResponse(text: string): KimiAction {
 		chat = chat.replace(match[0], "").trim();
 	}
 
-	// Extract page-add blocks: ```page-add\nslug: ...\ntitle: ...\nabstract: ...\n---\nbody HTML\n```
+	// Extract page-add blocks — supports both formats:
+	//   ```page-add\nslug: ...\ntitle: ...\n---\nbody\n```
+	//   ```page-add slug="..." title="..." abstract="..." --- body```
 	const pageAdds: KimiAction["pageAdds"] = [];
-	const pageAddRegex = /```page-add\s*\n([\s\S]*?)```/g;
+	const pageAddRegex = /```page-add\s*([\s\S]*?)```/g;
 	for (const match of text.matchAll(pageAddRegex)) {
-		const parts = match[1].split(/\n---\n/);
-		if (parts.length >= 2) {
-			const header = parts[0];
-			const body = parts.slice(1).join("\n---\n").trim();
-			const slug = header.match(/slug:\s*(.+)/)?.[1]?.trim() || "";
-			const title = header.match(/title:\s*(.+)/)?.[1]?.trim() || "";
-			const abstract = header.match(/abstract:\s*(.+)/)?.[1]?.trim() || "";
-			if (slug && title && /^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) {
-				pageAdds.push({ slug, title: title.slice(0, 2000), abstract: abstract.slice(0, 5000), body: body.slice(0, 500000) });
+		const raw = match[1];
+		let slug = "", title = "", abstract = "", body = "";
+
+		// Try inline format: slug="val" title="val" abstract="val" --- body
+		const inlineSlug = raw.match(/slug=["']?([^"'\s]+)["']?/);
+		if (inlineSlug) {
+			slug = inlineSlug[1];
+			title = raw.match(/title=["']([^"']*?)["']/)?.[1] || raw.match(/title=(\S+)/)?.[1] || "";
+			abstract = raw.match(/abstract=["']([^"']*?)["']/)?.[1] || raw.match(/abstract=(\S+)/)?.[1] || "";
+			const dashSplit = raw.split(/\s*---\s*/);
+			if (dashSplit.length >= 2) body = dashSplit.slice(1).join("---").trim();
+		} else {
+			// Multiline format: slug: val\ntitle: val\n---\nbody
+			const parts = raw.split(/\n---\n/);
+			if (parts.length >= 2) {
+				const header = parts[0];
+				body = parts.slice(1).join("\n---\n").trim();
+				slug = header.match(/slug:\s*(.+)/)?.[1]?.trim() || "";
+				title = header.match(/title:\s*(.+)/)?.[1]?.trim() || "";
+				abstract = header.match(/abstract:\s*(.+)/)?.[1]?.trim() || "";
 			}
+		}
+
+		if (slug && title && /^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) {
+			pageAdds.push({ slug, title: title.slice(0, 2000), abstract: abstract.slice(0, 5000), body: body.slice(0, 500000) });
 		}
 		chat = chat.replace(match[0], "").trim();
 	}
 
-	// Extract page-edit blocks: ```page-edit slug=<slug>\ntitle: ...\nabstract: ...\n---\nnew body\n```
+	// Extract page-edit blocks — supports slug=val or slug="val"
 	const pageEdits: KimiAction["pageEdits"] = [];
-	const pageEditRegex = /```page-edit\s+slug=(\S+)\s*\n([\s\S]*?)```/g;
+	const pageEditRegex = /```page-edit\s+slug=["']?([^"'\s]+)["']?\s*([\s\S]*?)```/g;
 	for (const match of text.matchAll(pageEditRegex)) {
 		const slug = match[1];
 		const content = match[2];
-		const parts = content.split(/\n---\n/);
+		const parts = content.split(/\n---\n|---/);
 		const header = parts[0];
 		const body = parts.length >= 2 ? parts.slice(1).join("\n---\n").trim() : undefined;
-		const title = header.match(/title:\s*(.+)/)?.[1]?.trim();
-		const abstract = header.match(/abstract:\s*(.+)/)?.[1]?.trim();
+		const title = header.match(/title[:=]\s*["']?([^"'\n]+)["']?/)?.[1]?.trim();
+		const abstract = header.match(/abstract[:=]\s*["']?([^"'\n]+)["']?/)?.[1]?.trim();
 		if (title || abstract || body) {
 			pageEdits.push({ slug, title, abstract, body });
 		}
@@ -248,12 +267,21 @@ function sanitizeCss(css: string): string {
 		.replace(/javascript\s*:/gi, "/* blocked */");
 }
 
+const TOOL_DOCS = `
+You have tools via fenced code blocks (optional — feel free to just chat):
+\`\`\`css-add — appends CSS rules.
+\`\`\`css-edit — old snippet above ---, replacement below.
+\`\`\`css-reset — wipes custom CSS.
+\`\`\`page-add — new sidebar page (slug/title/abstract above ---, HTML body below).
+\`\`\`page-edit slug=<slug> — edit existing page fields, body below ---.
+Note: use css-add or css-edit, not plain css blocks.`;
+
 function buildSystemPrompt(customCss: string, pages: Page[]): string {
 	const cssSnippet = customCss ? `\nCustom CSS currently applied:\n${customCss}` : "\nNo custom CSS applied.";
 	const pagesSnippet = pages.length > 0
 		? `\nPages in sidebar:\n${pages.map((p) => `  slug="${p.slug}" title="${p.title}" abstract="${p.abstract}"\n  body: ${p.body.slice(0, 300)}${p.body.length > 300 ? "..." : ""}`).join("\n")}`
 		: "\nNo pages yet.";
-	return `You are Kimi K2.5, chatting in a live room at gnome.science. Be concise and friendly.${cssSnippet}${pagesSnippet}
+	return `You are chatting at gnome.science.${cssSnippet}${pagesSnippet}
 
 You have tools via fenced code blocks (optional — feel free to just chat):
 
@@ -448,27 +476,141 @@ export class Chat extends Server<Env> {
 			});
 		}
 
-		const ai = (this.env as any).AI;
-		if (!ai) {
-			console.error("AI binding not available");
-			return null;
+		const apiKey = (this.env as any).OPENROUTER_API_KEY;
+		if (!apiKey) {
+			// Fallback to Cloudflare AI binding
+			const ai = (this.env as any).AI;
+			if (!ai) {
+				console.error("No OPENROUTER_API_KEY and no AI binding");
+				return null;
+			}
+			console.log("Calling Kimi via CF AI with", messages.length, "messages");
+			const response = await ai.run("@cf/moonshotai/kimi-k2.5", { messages, max_tokens: 20480 });
+			const msg = response?.choices?.[0]?.message;
+			return response?.response ?? msg?.content ?? msg?.reasoning_content ?? msg?.reasoning ?? null;
 		}
-		console.log("Calling Kimi with", messages.length, "messages");
 
-		const response = await ai.run("@cf/moonshotai/kimi-k2.5", {
-			messages,
-			max_tokens: 20480,
+		console.log("Calling Kimi via OpenRouter with", messages.length, "messages");
+		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"Authorization": `Bearer ${apiKey}`,
+			},
+			body: JSON.stringify({
+				model: "moonshotai/kimi-k2.5",
+				messages,
+				max_tokens: 20480,
+			}),
 		});
 
-		console.log("Kimi response type:", typeof response, "keys:", response ? Object.keys(response) : "null");
+		if (!res.ok) {
+			const errText = await res.text();
+			console.error("OpenRouter error:", res.status, errText.slice(0, 500));
+			throw new Error(`OpenRouter ${res.status}: ${errText.slice(0, 200)}`);
+		}
 
-		const msg = response?.choices?.[0]?.message;
-		const text = response?.response ?? msg?.content ?? msg?.reasoning_content ?? msg?.reasoning;
+		const data = await res.json() as any;
+		const text = data.choices?.[0]?.message?.content;
 		if (!text) {
-			console.error("Unexpected AI response shape:", JSON.stringify(response).slice(0, 500));
+			console.error("No text in OpenRouter response:", JSON.stringify(data).slice(0, 500));
 			return null;
 		}
-		return text as string;
+		return text;
+	}
+
+	async callOpenRouter(model: string, systemPrompt: string, recentMessages: ChatMessage[]): Promise<string | null> {
+		const apiKey = (this.env as any).OPENROUTER_API_KEY;
+		if (!apiKey) return null;
+
+		const messages: { role: string; content: string }[] = [
+			{ role: "system", content: systemPrompt },
+		];
+		for (const m of recentMessages.slice(-20)) {
+			messages.push({
+				role: m.role === "assistant" ? "assistant" : "user",
+				content: m.role === "assistant" ? m.content.slice(0, 500) : `${m.user}: ${m.content}`,
+			});
+		}
+
+		console.log("Calling", model, "via OpenRouter with", messages.length, "messages");
+		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"Authorization": `Bearer ${apiKey}`,
+			},
+			body: JSON.stringify({ model, messages, max_tokens: 2048 }),
+		});
+
+		if (!res.ok) {
+			const errText = await res.text();
+			throw new Error(`OpenRouter ${res.status}: ${errText.slice(0, 200)}`);
+		}
+
+		const data = await res.json() as any;
+		return data.choices?.[0]?.message?.content ?? null;
+	}
+
+	async sendBotReply(botName: string, model: string, systemPrompt: string) {
+		if (this.isRateLimited()) return;
+		this.recordKimiCall();
+
+		this.broadcastMessage({ type: "typing", user: botName, isTyping: true });
+		try {
+			const rawResponse = await this.callOpenRouter(model, systemPrompt, this.messages);
+			this.broadcastMessage({ type: "typing", user: botName, isTyping: false });
+			if (!rawResponse) return;
+
+			// Parse tool calls same as Kimi
+			const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(rawResponse);
+
+			const toolParts: string[] = [];
+			if (cssReset) toolParts.push("🔧 _reset CSS_");
+			if (cssAdd) toolParts.push("🔧 _added CSS_");
+			for (const e of cssEdits) toolParts.push("🔧 _edited CSS_");
+			for (const e of edits) toolParts.push(`🔧 _edited message ${e.id}_`);
+			if (clearMessages) toolParts.push("🔧 _cleared all messages_");
+			for (const p of pageAdds) toolParts.push(`🔧 _created page "${p.title}"_`);
+			for (const p of pageEdits) toolParts.push(`🔧 _edited page "${p.slug}"_`);
+
+			const displayParts: string[] = [];
+			if (chat) displayParts.push(chat);
+			if (toolParts.length) displayParts.push(toolParts.join("\n"));
+			const displayContent = displayParts.join("\n\n");
+
+			if (displayContent) {
+				const msg: ChatMessage = {
+					id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+					content: displayContent,
+					user: botName,
+					role: "assistant",
+				};
+				this.saveMessage(msg);
+				this.broadcastMessage({ type: "add", ...msg });
+			}
+
+			// Apply tool effects
+			if (cssReset) { this.saveCss(""); this.broadcastMessage({ type: "css", css: "" }); }
+			for (const edit of cssEdits) {
+				if (this.customCss.includes(edit.old)) {
+					this.saveCss(sanitizeCss(this.customCss.replace(edit.old, edit.new)));
+					this.broadcastMessage({ type: "css", css: this.customCss });
+				}
+			}
+			if (cssAdd) { this.saveCss(sanitizeCss(this.customCss + "\n" + cssAdd)); this.broadcastMessage({ type: "css", css: this.customCss }); }
+			for (const pa of pageAdds) { this.savePage(pa); this.broadcastMessage({ type: "page-update", page: pa }); }
+			for (const pe of pageEdits) {
+				const existing = this.pages.find((p) => p.slug === pe.slug);
+				if (existing) {
+					const updated: Page = { ...existing, ...(pe.title !== undefined && { title: pe.title }), ...(pe.abstract !== undefined && { abstract: pe.abstract }), ...(pe.body !== undefined && { body: pe.body }) };
+					this.savePage(updated); this.broadcastMessage({ type: "page-update", page: updated });
+				}
+			}
+		} catch (e) {
+			this.broadcastMessage({ type: "typing", user: botName, isTyping: false });
+			console.error(botName, "failed:", e instanceof Error ? e.message : e);
+		}
 	}
 
 	async onMessage(connection: Connection, message: WSMessage) {
@@ -538,14 +680,29 @@ export class Chat extends Server<Env> {
 
 				const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(rawResponse);
 
-				if (chat) {
-					const kimiMessage: ChatMessage = {
-						id: `kimi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-						content: chat,
-						user: "Kimi K2.5",
-						role: "assistant",
-					};
-					this.saveMessage(kimiMessage);
+				// Build display content: chat text + tool call summaries
+				const toolParts: string[] = [];
+				if (cssReset) toolParts.push("🔧 _reset CSS_");
+				if (cssAdd) toolParts.push("🔧 _added CSS_");
+				for (const e of cssEdits) toolParts.push("🔧 _edited CSS_");
+				for (const e of edits) toolParts.push(`🔧 _edited message ${e.id}_`);
+				if (clearMessages) toolParts.push("🔧 _cleared all messages_");
+				for (const p of pageAdds) toolParts.push(`🔧 _created page "${p.title}"_`);
+				for (const p of pageEdits) toolParts.push(`🔧 _edited page "${p.slug}"_`);
+
+				const displayParts: string[] = [];
+				if (chat) displayParts.push(chat);
+				if (toolParts.length) displayParts.push(toolParts.join("\n"));
+				const displayContent = displayParts.join("\n\n");
+
+				const kimiMessage: ChatMessage = {
+					id: `kimi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+					content: displayContent,
+					user: "Kimi K2.5",
+					role: "assistant",
+				};
+				this.saveMessage(kimiMessage);
+				if (displayContent) {
 					this.broadcastMessage({ type: "add", ...kimiMessage });
 				}
 
@@ -601,6 +758,30 @@ export class Chat extends Server<Env> {
 						this.savePage(updated);
 						this.broadcastMessage({ type: "page-update", page: updated });
 					}
+				}
+			}
+
+			// Cogito: responds if mentioned by name, or randomly 1/5 messages
+			if (parsed.type === "add" && parsed.role !== "assistant"
+				&& !KIMI_PATTERN.test(parsed.content)) {
+				if (COGITO_PATTERN.test(parsed.content) || Math.random() < 0.2) {
+					this.sendBotReply(
+						"Cogito v2.1",
+						"deepcogito/cogito-v2.1-671b",
+						`You are chatting at gnome.science.\n${TOOL_DOCS}`,
+					);
+				}
+			}
+
+			// Claude: responds if mentioned by name, or randomly 1/10 messages
+			if (parsed.type === "add" && parsed.role !== "assistant"
+				&& !KIMI_PATTERN.test(parsed.content)) {
+				if (CLAUDE_PATTERN.test(parsed.content) || Math.random() < 0.1) {
+					this.sendBotReply(
+						"Claude",
+						"anthropic/claude-haiku-4.5",
+						`You are chatting at gnome.science.\n${TOOL_DOCS}`,
+					);
 				}
 			}
 		}
