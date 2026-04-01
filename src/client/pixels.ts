@@ -95,14 +95,23 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	let cols = 0;
 	let rows = 0;
 
-	// Query text overlay regions and return their bounds in grid-cell coordinates
+	// Query individual text elements and return their bounds in grid-cell coords
+	const TEXT_SELECTORS = [
+		".brand", ".header-right",
+		".msg-who", ".msg-body",
+		".empty-text",
+		".compose-input", ".compose-send", ".compose-meta",
+		".sidebar-label", ".sidebar-item-title", ".sidebar-item-desc",
+		".article-back", ".article-title", ".article-abstract",
+		".article-body p", ".tex-block",
+	];
+	const textQuery = TEXT_SELECTORS.join(",");
+
 	function getTextRegions(): { c0: number; r0: number; c1: number; r1: number }[] {
-		const selectors = [".app", ".sidebar", ".article-page"];
+		const els = document.querySelectorAll(textQuery);
 		const regions: { c0: number; r0: number; c1: number; r1: number }[] = [];
-		for (const sel of selectors) {
-			const el = document.querySelector(sel);
-			if (!el) continue;
-			const rect = el.getBoundingClientRect();
+		for (let i = 0; i < els.length; i++) {
+			const rect = els[i].getBoundingClientRect();
 			if (rect.width === 0 || rect.height === 0) continue;
 			regions.push({
 				c0: rect.left / PX,
