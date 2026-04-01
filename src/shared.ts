@@ -23,4 +23,8 @@ export type Message =
 	| {
 			type: "all";
 			messages: ChatMessage[];
+	  }
+	| {
+			type: "css";
+			css: string;
 	  };
