@@ -100,28 +100,38 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	let cols = 0;
 	let rows = 0;
 
-	// Offscreen canvas to render DOM text and build a glyph mask
-	const maskCanvas = document.createElement("canvas");
-	const mctx = maskCanvas.getContext("2d", { willReadFrequently: true })!;
-	// mask at grid resolution (1 pixel per cell) — we only need per-cell info
-	let mask: Uint8Array = new Uint8Array(0); // 0-255 proximity to text glyphs
+	// Two offscreen canvases: one for sharp text, one for blurred halo
+	const glyphCanvas = document.createElement("canvas");
+	const gctx = glyphCanvas.getContext("2d")!;
+	const blurCanvas = document.createElement("canvas");
+	const bctx = blurCanvas.getContext("2d", { willReadFrequently: true })!;
+	let mask: Uint8Array = new Uint8Array(0);
 	let maskW = 0;
 	let maskH = 0;
+	let lastFw = 0;
+	let lastFh = 0;
 
 	function buildTextMask() {
 		maskW = cols;
 		maskH = rows;
 		if (maskW === 0 || maskH === 0) return;
 
-		// render at full resolution to capture glyph shapes
 		const fw = maskW * PX;
 		const fh = maskH * PX;
-		maskCanvas.width = fw;
-		maskCanvas.height = fh;
 
-		// draw all text from DOM onto offscreen canvas in white
-		mctx.clearRect(0, 0, fw, fh);
-		mctx.fillStyle = "#fff";
+		// only resize canvases when dimensions change
+		if (fw !== lastFw || fh !== lastFh) {
+			glyphCanvas.width = fw;
+			glyphCanvas.height = fh;
+			blurCanvas.width = fw;
+			blurCanvas.height = fh;
+			lastFw = fw;
+			lastFh = fh;
+		}
+
+		// render text glyphs in white
+		gctx.clearRect(0, 0, fw, fh);
+		gctx.fillStyle = "#fff";
 
 		const root = document.getElementById("root");
 		if (!root) return;
@@ -129,26 +139,23 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		const range = document.createRange();
 		let node: Text | null;
 		while ((node = walker.nextNode() as Text | null)) {
-			if (!node.textContent || !node.textContent.trim()) continue;
+			const text = node.textContent;
+			if (!text || !text.trim()) continue;
 			const parent = node.parentElement;
 			if (!parent) continue;
 			const style = getComputedStyle(parent);
-			mctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-			// get per-character rects for accurate positioning
-			for (let ci = 0; ci < node.textContent.length; ci++) {
-				if (node.textContent[ci].trim() === "") continue;
-				range.setStart(node, ci);
-				range.setEnd(node, ci + 1);
-				const rects = range.getClientRects();
-				for (let ri = 0; ri < rects.length; ri++) {
-					const rc = rects[ri];
-					// fillText at the baseline position
-					mctx.fillText(node.textContent[ci], rc.left, rc.bottom - parseFloat(style.fontSize) * 0.18);
-				}
+			gctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+			// render per text node line (fast), not per character
+			range.selectNodeContents(node);
+			const rects = range.getClientRects();
+			for (let i = 0; i < rects.length; i++) {
+				const rc = rects[i];
+				const baseline = rc.bottom - rc.height * 0.18;
+				gctx.fillText(text, rc.left, baseline, rc.width);
 			}
 		}
 
-		// also render input values/placeholders
+		// input values/placeholders
 		const inputs = root.querySelectorAll("input") as NodeListOf<HTMLInputElement>;
 		for (let i = 0; i < inputs.length; i++) {
 			const inp = inputs[i];
@@ -156,58 +163,25 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 			if (!text) continue;
 			const rc = inp.getBoundingClientRect();
 			const style = getComputedStyle(inp);
-			mctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-			mctx.fillText(text, rc.left, rc.bottom - parseFloat(style.fontSize) * 0.18);
+			gctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+			gctx.fillText(text, rc.left, rc.bottom - rc.height * 0.18, rc.width);
 		}
 
-		// read full-res pixels, then build a grid-resolution proximity mask
-		// first: binary glyph mask at full res
-		const imgData = mctx.getImageData(0, 0, fw, fh).data;
+		// blur to create halo (GPU-accelerated)
+		bctx.clearRect(0, 0, fw, fh);
+		bctx.filter = `blur(${HALO * PX}px)`;
+		bctx.drawImage(glyphCanvas, 0, 0);
+		bctx.filter = "none";
 
-		// for each grid cell, compute distance to nearest glyph pixel
-		// step 1: find which cells contain glyph pixels
-		const cellHasGlyph = new Uint8Array(maskW * maskH);
-		for (let gy = 0; gy < maskH; gy++) {
-			for (let gx = 0; gx < maskW; gx++) {
-				// check if any full-res pixel in this cell is lit
-				let found = false;
-				const x0 = gx * PX;
-				const y0 = gy * PX;
-				for (let py = y0; py < y0 + PX && !found; py++) {
-					for (let px = x0; px < x0 + PX && !found; px++) {
-						if (imgData[(py * fw + px) * 4 + 3] > 30) found = true;
-					}
-				}
-				if (found) cellHasGlyph[gy * maskW + gx] = 1;
-			}
-		}
-
-		// step 2: distance field — for each cell, min distance to a glyph cell
+		// sample blurred result at grid resolution
+		const imgData = bctx.getImageData(0, 0, fw, fh).data;
 		mask = new Uint8Array(maskW * maskH);
-		const searchR = HALO;
+		const halfPX = PX >> 1;
 		for (let gy = 0; gy < maskH; gy++) {
+			const py = gy * PX + halfPX;
 			for (let gx = 0; gx < maskW; gx++) {
-				let minD = searchR + 1;
-				const y0 = Math.max(0, gy - searchR);
-				const y1 = Math.min(maskH - 1, gy + searchR);
-				const x0 = Math.max(0, gx - searchR);
-				const x1 = Math.min(maskW - 1, gx + searchR);
-				for (let sy = y0; sy <= y1; sy++) {
-					for (let sx = x0; sx <= x1; sx++) {
-						if (cellHasGlyph[sy * maskW + sx]) {
-							const dx = gx - sx;
-							const dy = gy - sy;
-							const d = Math.sqrt(dx * dx + dy * dy);
-							if (d < minD) minD = d;
-						}
-					}
-				}
-				// encode: 255 = on glyph, fades to 0 at HALO distance
-				if (minD <= 0) {
-					mask[gy * maskW + gx] = 255;
-				} else if (minD < searchR) {
-					mask[gy * maskW + gx] = (255 * (1 - minD / searchR)) | 0;
-				}
+				const px = gx * PX + halfPX;
+				mask[gy * maskW + gx] = imgData[(py * fw + px) * 4]; // R channel
 			}
 		}
 	}
@@ -241,18 +215,14 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		return sp.map((s) => s / mx);
 	});
 
-	let lastMaskTime = 0;
 	function draw(t: number) {
 		if (cols === 0 || rows === 0) return;
 		const w = canvas.width;
 		const h = canvas.height;
 		const s = t / 1000;
 
-		// rebuild glyph mask every 200ms (text/scroll may change)
-		if (t - lastMaskTime > 200) {
-			buildTextMask();
-			lastMaskTime = t;
-		}
+		// rebuild glyph mask every frame so scrolling/text changes are smooth
+		buildTextMask();
 
 		// 4 lights at different color temperatures, sweeping wide orbits
 		const lights = [
