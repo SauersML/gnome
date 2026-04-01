@@ -1,6 +1,5 @@
 const PX = 18;
 
-// deterministic hash for static pixel properties
 function hash(x: number, y: number, seed: number = 0): number {
 	let h = (x + seed * 137) * 374761393 + (y + seed * 51) * 668265263;
 	h = (h ^ (h >> 13)) * 1274126177;
@@ -8,37 +7,35 @@ function hash(x: number, y: number, seed: number = 0): number {
 	return h;
 }
 
-// forest palette — base RGB + per-pixel refractive index
+// varied palette — not all green. emeralds, teals, mossy golds, deep blues, warm earth
 const PALETTE: [number, number, number][] = [
-	[10, 22, 12],
-	[14, 28, 16],
-	[18, 35, 20],
-	[22, 42, 26],
-	[27, 50, 30],
-	[16, 38, 22],
-	[20, 32, 18],
-	[32, 56, 34],
-	[12, 26, 15],
-	[25, 46, 28],
-	[30, 52, 32],
-	[14, 30, 19],
+	[8, 20, 10],     // deep forest
+	[12, 32, 18],    // dark emerald
+	[6, 18, 22],     // deep teal
+	[22, 44, 20],    // bright moss
+	[14, 26, 30],    // night water
+	[28, 38, 12],    // olive
+	[10, 36, 28],    // jade
+	[18, 14, 10],    // dark earth
+	[24, 48, 22],    // fern
+	[16, 22, 34],    // deep blue
+	[32, 28, 10],    // amber shadow
+	[8, 30, 24],     // dark cyan
+	[20, 40, 16],    // leaf
+	[12, 16, 26],    // midnight
+	[26, 50, 30],    // bright forest
+	[30, 22, 14],    // bark warm
 ];
 
-// each pixel is a little "gem" with fixed optical properties
 interface Pixel {
 	baseR: number;
 	baseG: number;
 	baseB: number;
-	// refractive index: how much this pixel bends/concentrates light
-	// Snell's law inspired — higher index = more light concentrated
 	ior: number;
-	// absorption spectrum: how much of each wavelength (RGB) this pixel absorbs
-	// 0 = fully transparent to that wavelength, 1 = fully absorbs
-	absR: number;
-	absG: number;
-	absB: number;
-	// thickness variation — thicker pixels absorb more (Beer-Lambert)
-	thickness: number;
+	// per-channel transmission (0-1): how much of each color passes through
+	txR: number;
+	txG: number;
+	txB: number;
 }
 
 export function initPixelCanvas(canvas: HTMLCanvasElement) {
@@ -59,34 +56,35 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				const h1 = hash(col, row);
 				const colorIdx = Math.abs(h1) % PALETTE.length;
 				const [br, bg, bb] = PALETTE[colorIdx];
-				const v = ((h1 >> 8) % 12) - 6;
+				const v = ((h1 >> 8) % 10) - 5;
 
-				// refractive index: most pixels ~1.5 (glass), some are crystal (2.4 like diamond)
-				const crystalRoll = (Math.abs(hash(col, row, 42)) % 1000) / 1000;
+				// refractive index
+				const roll = (Math.abs(hash(col, row, 42)) % 1000) / 1000;
 				let ior: number;
-				if (crystalRoll < 0.03) ior = 2.2 + crystalRoll * 8;       // rare diamond-like
-				else if (crystalRoll < 0.12) ior = 1.7 + crystalRoll * 2;  // crystal
-				else ior = 1.3 + (crystalRoll - 0.12) * 0.5;              // glass
+				if (roll < 0.05) ior = 2.0 + roll * 10;        // diamond
+				else if (roll < 0.15) ior = 1.7 + roll * 3;    // crystal
+				else ior = 1.3 + roll * 0.4;                    // glass
 
-				// absorption — green pixels absorb less green (they transmit it)
-				// this creates chromatic color when light passes through
-				const absBase = (Math.abs(hash(col, row, 77)) % 100) / 100;
-				const absR = 0.6 + absBase * 0.35;     // absorb most red
-				const absG = 0.15 + absBase * 0.25;    // transmit green
-				const absB = 0.45 + absBase * 0.3;     // absorb moderate blue
-
-				// thickness: Beer-Lambert path length
-				const thickness = 0.8 + ((Math.abs(hash(col, row, 99)) % 100) / 100) * 0.6;
+				// transmission spectrum — determines what COLOR light comes through
+				// this is what creates the colorful refraction
+				const spectrumType = Math.abs(hash(col, row, 88)) % 5;
+				let txR: number, txG: number, txB: number;
+				switch (spectrumType) {
+					case 0: txR = 0.15; txG = 0.85; txB = 0.3;  break; // green filter
+					case 1: txR = 0.2;  txG = 0.6;  txB = 0.8;  break; // teal filter
+					case 2: txR = 0.7;  txG = 0.75; txB = 0.15; break; // golden filter
+					case 3: txR = 0.1;  txG = 0.9;  txB = 0.5;  break; // emerald filter
+					default: txR = 0.5; txG = 0.5;  txB = 0.7;  break; // blue-ish
+				}
 
 				pixelRow.push({
 					baseR: br + v,
 					baseG: bg + v,
 					baseB: bb + v,
 					ior,
-					absR,
-					absG,
-					absB,
-					thickness,
+					txR,
+					txG,
+					txB,
 				});
 			}
 			pixels.push(pixelRow);
@@ -100,41 +98,47 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	}
 
 	function draw(t: number) {
+		if (cols === 0 || rows === 0) return;
 		const w = canvas.width;
 		const h = canvas.height;
-		if (cols === 0 || rows === 0) return;
 
-		// time in seconds
 		const s = t / 1000;
 
-		// -- light sources: smooth continuous motion --
-		// positions drift on Lissajous-like curves
+		// light sources — smooth continuous orbits, colored, focused
 		const lights = [
 			{
-				x: 0.25 + 0.18 * Math.sin(s * 0.13),
-				y: 0.35 + 0.12 * Math.cos(s * 0.17),
-				intensity: 1.0,
-				// light color temperature — warm white
-				r: 1.0, g: 0.95, b: 0.8,
+				x: 0.3 + 0.25 * Math.sin(s * 0.15),
+				y: 0.4 + 0.2 * Math.cos(s * 0.19),
+				power: 1.2,
+				r: 1.0, g: 0.9, b: 0.6,   // warm gold
+				radius: 0.28,
 			},
 			{
-				x: 0.72 + 0.12 * Math.cos(s * 0.09),
-				y: 0.6 + 0.18 * Math.sin(s * 0.11),
-				intensity: 0.7,
-				// cooler, greener light
-				r: 0.7, g: 1.0, b: 0.75,
+				x: 0.7 + 0.15 * Math.cos(s * 0.11),
+				y: 0.55 + 0.25 * Math.sin(s * 0.13),
+				power: 1.0,
+				r: 0.5, g: 1.0, b: 0.7,   // emerald
+				radius: 0.25,
 			},
 			{
-				x: 0.5 + 0.22 * Math.sin(s * 0.07),
-				y: 0.2 + 0.1 * Math.cos(s * 0.19),
-				intensity: 0.5,
-				// golden light
-				r: 1.0, g: 0.85, b: 0.5,
+				x: 0.45 + 0.3 * Math.sin(s * 0.08),
+				y: 0.15 + 0.12 * Math.cos(s * 0.22),
+				power: 0.8,
+				r: 0.6, g: 0.7, b: 1.0,   // cool blue
+				radius: 0.22,
+			},
+			{
+				x: 0.15 + 0.1 * Math.cos(s * 0.17),
+				y: 0.8 + 0.1 * Math.sin(s * 0.14),
+				power: 0.6,
+				r: 1.0, g: 0.6, b: 0.3,   // amber
+				radius: 0.2,
 			},
 		];
 
-		const imageData = ctx.createImageData(w, h);
-		const data = imageData.data;
+		// clear to near-black
+		ctx.fillStyle = "#050a06";
+		ctx.fillRect(0, 0, w, h);
 
 		for (let row = 0; row < rows; row++) {
 			for (let col = 0; col < cols; col++) {
@@ -142,88 +146,71 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				const nx = col / cols;
 				const ny = row / rows;
 
-				// -- accumulate light from all sources --
-				let incidentR = 0;
-				let incidentG = 0;
-				let incidentB = 0;
+				let litR = 0;
+				let litG = 0;
+				let litB = 0;
 
 				for (const light of lights) {
 					const dx = nx - light.x;
 					const dy = ny - light.y;
 					const dist = Math.sqrt(dx * dx + dy * dy);
 
-					// inverse-square falloff (real physics)
-					const falloff = light.intensity / (1 + dist * dist * 12);
+					// sharp gaussian falloff (not inverse-square, more focused pools)
+					const sigma = light.radius;
+					const falloff = light.power * Math.exp(-(dist * dist) / (2 * sigma * sigma));
 
-					// Fresnel approximation: how much light enters the pixel
-					// at normal incidence, reflectance R0 = ((n1-n2)/(n1+n2))^2
-					// n1 = 1 (air), n2 = pixel ior
+					if (falloff < 0.005) continue; // skip negligible contribution
+
+					// Fresnel: Schlick's approximation
 					const n = px.ior;
 					const r0 = ((1 - n) / (1 + n)) ** 2;
-					// angle-dependent: Schlick's approximation
-					// use distance as proxy for angle (farther from light = more oblique)
-					const cosTheta = Math.max(0, 1 - dist * 1.5);
+					const cosTheta = Math.max(0.01, 1 - dist * 1.2);
 					const fresnel = r0 + (1 - r0) * (1 - cosTheta) ** 5;
 					const transmitted = 1 - fresnel;
 
-					// Beer-Lambert absorption: I = I0 * e^(-α * d)
-					const transmitR = Math.exp(-px.absR * px.thickness);
-					const transmitG = Math.exp(-px.absG * px.thickness);
-					const transmitB = Math.exp(-px.absB * px.thickness);
-
-					// light that makes it through this pixel
-					incidentR += falloff * transmitted * transmitR * light.r;
-					incidentG += falloff * transmitted * transmitG * light.g;
-					incidentB += falloff * transmitted * transmitB * light.b;
+					// color filtering: light * transmission spectrum of this pixel
+					litR += falloff * transmitted * px.txR * light.r;
+					litG += falloff * transmitted * px.txG * light.g;
+					litB += falloff * transmitted * px.txB * light.b;
 				}
 
-				// caustic sparkle: high-IOR pixels focus light, creating bright spots
-				// modulated by time for continuous shimmer
-				const causticPhase = Math.sin(s * 0.5 + col * 0.7 + row * 1.1)
-					* Math.sin(s * 0.3 + col * 0.3 - row * 0.5);
-				const causticStrength = (px.ior > 1.8) ? (px.ior - 1.5) * causticPhase * 0.4 : 0;
-
-				// combine: base color + transmitted light + caustics
-				const lightScale = 3.5;
-				let r = px.baseR + (incidentR * lightScale + Math.max(0, causticStrength)) * 60;
-				let g = px.baseG + (incidentG * lightScale + Math.max(0, causticStrength) * 0.8) * 60;
-				let b = px.baseB + (incidentB * lightScale + Math.max(0, causticStrength) * 0.3) * 60;
-
-				r = Math.min(255, Math.max(0, Math.round(r)));
-				g = Math.min(255, Math.max(0, Math.round(g)));
-				b = Math.min(255, Math.max(0, Math.round(b)));
-
-				// fill the pixel block
-				const startX = col * PX;
-				const startY = row * PX;
-				const endX = Math.min(startX + PX, w);
-				const endY = Math.min(startY + PX, h);
-
-				for (let py = startY; py < endY; py++) {
-					const rowOffset = py * w;
-					for (let ppx = startX; ppx < endX; ppx++) {
-						const idx = (rowOffset + ppx) * 4;
-						data[idx] = r;
-						data[idx + 1] = g;
-						data[idx + 2] = b;
-						data[idx + 3] = 255;
+				// caustics: high-IOR pixels concentrate and flash
+				if (px.ior > 1.7) {
+					const caustic = Math.sin(s * 0.7 + col * 0.8 + row * 1.3)
+						* Math.sin(s * 0.4 - col * 0.3 + row * 0.6);
+					if (caustic > 0.3) {
+						const strength = (px.ior - 1.5) * (caustic - 0.3) * 1.5;
+						litR += strength * px.txR;
+						litG += strength * px.txG;
+						litB += strength * px.txB;
 					}
 				}
+
+				// final color: base + light contribution
+				const boost = 120;
+				let r = px.baseR + litR * boost;
+				let g = px.baseG + litG * boost;
+				let b = px.baseB + litB * boost;
+
+				r = Math.min(255, Math.max(0, r)) | 0;
+				g = Math.min(255, Math.max(0, g)) | 0;
+				b = Math.min(255, Math.max(0, b)) | 0;
+
+				ctx.fillStyle = `rgb(${r},${g},${b})`;
+				ctx.fillRect(col * PX, row * PX, PX, PX);
 			}
 		}
 
-		ctx.putImageData(imageData, 0, 0);
 		animId = requestAnimationFrame(draw);
 	}
 
 	resize();
 	animId = requestAnimationFrame(draw);
 
-	const onResize = () => { resize(); };
-	window.addEventListener("resize", onResize);
+	window.addEventListener("resize", resize);
 
 	return () => {
 		cancelAnimationFrame(animId);
-		window.removeEventListener("resize", onResize);
+		window.removeEventListener("resize", resize);
 	};
 }

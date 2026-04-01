@@ -11,15 +11,22 @@ type Article = {
 	slug: string;
 	title: string;
 	abstract: string;
-	body: string;
+	body: () => string;
 };
+
+function k(tex: string): string {
+	return katex.renderToString(tex, { throwOnError: false });
+}
+function kb(tex: string): string {
+	return katex.renderToString(tex, { throwOnError: false, displayMode: true });
+}
 
 const articles: Article[] = [
 	{
 		slug: "entropy-bounds",
 		title: "Entropy Bounds in Finite Systems",
 		abstract: "Upper bounds on von Neumann entropy for finite-dimensional quantum systems under locality constraints.",
-		body: `
+		body: () => `
 <p>Consider a finite-dimensional Hilbert space ${k(`\\mathcal{H} = \\mathbb{C}^d`)}. The von Neumann entropy of a state ${k(`\\rho`)} is</p>
 <div class="tex-block">${kb(`S(\\rho) = -\\text{Tr}(\\rho \\ln \\rho)`)}</div>
 <p>For a bipartite system ${k(`\\mathcal{H} = \\mathcal{H}_A \\otimes \\mathcal{H}_B`)}, the mutual information is bounded by</p>
@@ -35,7 +42,7 @@ const articles: Article[] = [
 		slug: "spectral-gaps",
 		title: "Spectral Gaps and Mixing Times",
 		abstract: "Relating the spectral gap of reversible Markov chains to mixing behavior on expander graphs.",
-		body: `
+		body: () => `
 <p>Let ${k(`P`)} be the transition matrix of an irreducible, reversible Markov chain on state space ${k(`\\Omega`)} with stationary distribution ${k(`\\pi`)}. The spectral gap is</p>
 <div class="tex-block">${kb(`\\gamma = 1 - \\lambda_2`)}</div>
 <p>where ${k(`\\lambda_2`)} is the second-largest eigenvalue of ${k(`P`)}. The mixing time satisfies</p>
@@ -51,7 +58,7 @@ const articles: Article[] = [
 		slug: "variational-inference",
 		title: "Variational Inference with Rényi Divergences",
 		abstract: "Tightening the evidence lower bound using Rényi-α divergences for latent variable models.",
-		body: `
+		body: () => `
 <p>In variational inference, we approximate a posterior ${k(`p(z|x)`)} with a tractable family ${k(`q_\\phi(z)`)} by maximizing the ELBO:</p>
 <div class="tex-block">${kb(`\\mathcal{L}(\\phi) = \\mathbb{E}_{q_\\phi}[\\ln p(x,z) - \\ln q_\\phi(z)] \\leq \\ln p(x)`)}</div>
 <p>The gap equals ${k(`D_{KL}(q_\\phi \\| p(z|x))`)}. We can tighten this using the Rényi divergence of order ${k(`\\alpha \\in (0,1)`)}:</p>
@@ -64,15 +71,6 @@ const articles: Article[] = [
 `,
 	},
 ];
-
-function k(tex: string): string {
-	try { return katex.renderToString(tex, { throwOnError: false }); }
-	catch { return tex; }
-}
-function kb(tex: string): string {
-	try { return katex.renderToString(tex, { throwOnError: false, displayMode: true }); }
-	catch { return tex; }
-}
 
 function useKimiCss() {
 	const styleRef = useRef<HTMLStyleElement | null>(null);
@@ -109,16 +107,17 @@ function ArticlePage({ article, onBack }: { article: Article; onBack: () => void
 			<button className="article-back" onClick={onBack}>&larr; back</button>
 			<h1 className="article-title">{article.title}</h1>
 			<p className="article-abstract">{article.abstract}</p>
-			<div className="article-body" dangerouslySetInnerHTML={{ __html: article.body }} />
+			<div className="article-body" dangerouslySetInnerHTML={{ __html: article.body() }} />
 		</div>
 	);
 }
 
 function App() {
 	const [name, setName] = useState<string | null>(() => localStorage.getItem("gnome_username"));
-	const [nameInput, setNameInput] = useState("");
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [activeArticle, setActiveArticle] = useState<Article | null>(null);
+	const [askingName, setAskingName] = useState(false);
+	const [pendingContent, setPendingContent] = useState("");
 	const messagesEnd = useRef<HTMLDivElement>(null);
 	const initialLoad = useRef(true);
 	const applyCss = useKimiCss();
@@ -140,42 +139,14 @@ function App() {
 			if (message.type === "css") {
 				applyCss(message.css);
 			} else if (message.type === "add") {
-				const foundIndex = messages.findIndex((m) => m.id === message.id);
-				if (foundIndex === -1) {
-					setMessages((prev) => [
-						...prev,
-						{
-							id: message.id,
-							content: message.content,
-							user: message.user,
-							role: message.role,
-						},
-					]);
-				} else {
-					setMessages((prev) => {
-						return prev
-							.slice(0, foundIndex)
-							.concat({
-								id: message.id,
-								content: message.content,
-								user: message.user,
-								role: message.role,
-							})
-							.concat(prev.slice(foundIndex + 1));
-					});
-				}
+				setMessages((prev) => {
+					const exists = prev.some((m) => m.id === message.id);
+					if (!exists) return [...prev, message];
+					return prev.map((m) => (m.id === message.id ? message : m));
+				});
 			} else if (message.type === "update") {
 				setMessages((prev) =>
-					prev.map((m) =>
-						m.id === message.id
-							? {
-									id: message.id,
-									content: message.content,
-									user: message.user,
-									role: message.role,
-								}
-							: m,
-					),
+					prev.map((m) => (m.id === message.id ? message : m)),
 				);
 			} else {
 				setMessages(message.messages);
@@ -192,49 +163,19 @@ function App() {
 		);
 	}
 
-	if (!name) {
-		return (
-			<>
-				<PixelBackground />
-				<div className="app">
-					<header className="header">
-						<div className="brand">
-							gnome<span className="dot">.</span>science
-						</div>
-					</header>
-
-					<div className="divider" />
-
-					<div className="empty">
-						<div className="empty-text">
-							What should we call you?
-						</div>
-					</div>
-
-					<div className="compose">
-						<form
-							className="compose-form"
-							onSubmit={(e) => {
-								e.preventDefault();
-								const trimmed = nameInput.trim();
-								if (!trimmed) return;
-								localStorage.setItem("gnome_username", trimmed);
-								setName(trimmed);
-							}}
-						>
-							<input
-								type="text"
-								className="compose-input"
-								placeholder="Enter your name..."
-								autoComplete="off"
-								value={nameInput}
-								onChange={(e) => setNameInput(e.target.value)}
-							/>
-							<button type="submit" className="compose-send">Join</button>
-						</form>
-					</div>
-				</div>
-			</>
+	function sendMessage(content: string, userName: string) {
+		const chatMessage: ChatMessage = {
+			id: nanoid(8),
+			content,
+			user: userName,
+			role: "user",
+		};
+		setMessages((prev) => [...prev, chatMessage]);
+		socket.send(
+			JSON.stringify({
+				type: "add",
+				...chatMessage,
+			} satisfies Message),
 		);
 	}
 
@@ -255,7 +196,7 @@ function App() {
 					{messages.length === 0 ? (
 						<div className="empty">
 							<div className="empty-text">
-								Nothing here yet.
+								{askingName ? "What should we call you?" : "Nothing here yet."}
 							</div>
 						</div>
 					) : (
@@ -263,7 +204,7 @@ function App() {
 							{messages.map((msg, i) => (
 								<div
 									key={msg.id}
-									className={`msg ${msg.user === name ? "msg-self" : ""} ${msg.role === "assistant" ? "msg-assistant" : ""} ${i >= messages.length - 1 ? "msg-new" : ""}`}
+									className={`msg ${msg.user === name ? "msg-self" : ""} ${msg.role === "assistant" ? "msg-assistant" : ""} ${i === messages.length - 1 ? "msg-new" : ""}`}
 								>
 									<span className="msg-who">{msg.user}</span>
 									<span className="msg-body">{msg.content}</span>
@@ -274,40 +215,65 @@ function App() {
 					)}
 
 					<div className="compose">
-						<form
-							className="compose-form"
-							onSubmit={(e) => {
-								e.preventDefault();
-								const input = e.currentTarget.elements.namedItem(
-									"content",
-								) as HTMLInputElement;
-								if (!input.value.trim()) return;
-								const chatMessage: ChatMessage = {
-									id: nanoid(8),
-									content: input.value,
-									user: name,
-									role: "user",
-								};
-								setMessages((prev) => [...prev, chatMessage]);
-								socket.send(
-									JSON.stringify({
-										type: "add",
-										...chatMessage,
-									} satisfies Message),
-								);
-								input.value = "";
-							}}
-						>
-							<input
-								type="text"
-								name="content"
-								className="compose-input"
-								placeholder="Write something..."
-								autoComplete="off"
-							/>
-							<button type="submit" className="compose-send">Send</button>
-						</form>
-						<div className="compose-meta">as {name}</div>
+						{askingName ? (
+							<form
+								className="compose-form"
+								onSubmit={(e) => {
+									e.preventDefault();
+									const input = e.currentTarget.elements.namedItem(
+										"name",
+									) as HTMLInputElement;
+									const trimmed = input.value.trim();
+									if (!trimmed) return;
+									localStorage.setItem("gnome_username", trimmed);
+									setName(trimmed);
+									setAskingName(false);
+									if (pendingContent) {
+										sendMessage(pendingContent, trimmed);
+										setPendingContent("");
+									}
+								}}
+							>
+								<input
+									type="text"
+									name="name"
+									className="compose-input"
+									placeholder="Enter your name..."
+									autoComplete="off"
+									autoFocus
+								/>
+								<button type="submit" className="compose-send">Join</button>
+							</form>
+						) : (
+							<form
+								className="compose-form"
+								onSubmit={(e) => {
+									e.preventDefault();
+									const input = e.currentTarget.elements.namedItem(
+										"content",
+									) as HTMLInputElement;
+									if (!input.value.trim()) return;
+									if (!name) {
+										setPendingContent(input.value.trim());
+										setAskingName(true);
+										input.value = "";
+										return;
+									}
+									sendMessage(input.value, name);
+									input.value = "";
+								}}
+							>
+								<input
+									type="text"
+									name="content"
+									className="compose-input"
+									placeholder="Write something..."
+									autoComplete="off"
+								/>
+								<button type="submit" className="compose-send">Send</button>
+							</form>
+						)}
+						{name && <div className="compose-meta">as {name}</div>}
 					</div>
 				</div>
 

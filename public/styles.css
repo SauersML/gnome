@@ -25,7 +25,6 @@ html, body {
 	font-size: clamp(14px, 1.6vw, 15.5px);
 	line-height: 1.6;
 	-webkit-font-smoothing: antialiased;
-	overflow: hidden;
 	background: #0a140c;
 }
 
@@ -37,6 +36,7 @@ html, body {
 	height: 100%;
 	z-index: 0;
 	display: block;
+	pointer-events: none;
 }
 
 /* ---- Root ---- */
@@ -44,6 +44,7 @@ html, body {
 	height: 100%;
 	position: relative;
 	z-index: 1;
+	overflow: hidden;
 }
 
 /* ---- Layout ---- */
@@ -51,16 +52,18 @@ html, body {
 	display: flex;
 	height: 100%;
 	width: 100%;
+	overflow: hidden;
+	padding-left: clamp(24px, 8vw, 14%);
 }
 
 .app {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
+	width: 50%;
+	min-width: 340px;
 	max-width: 580px;
-	width: 100%;
-	margin-left: clamp(24px, 14vw, 22%);
-	flex-shrink: 0;
+	flex-shrink: 1;
 }
 
 /* ---- Header ---- */
@@ -277,11 +280,11 @@ html, body {
 .sidebar {
 	flex: 1;
 	max-width: 380px;
-	min-width: 240px;
 	height: 100%;
 	overflow-y: auto;
 	padding: clamp(28px, 6vh, 52px) clamp(24px, 3vw, 40px);
 	padding-top: calc(clamp(28px, 6vh, 52px) + clamp(22px, 3.5vw, 30px) + clamp(16px, 3vh, 24px) + 2px);
+	margin-left: clamp(24px, 4vw, 60px);
 	border-left: 1px solid var(--moss);
 	scrollbar-width: none;
 }
@@ -409,21 +412,24 @@ html, body {
 @media (max-width: 768px) {
 	.layout {
 		flex-direction: column;
+		padding-left: 0;
 	}
 
 	.app {
-		margin-left: 0;
 		padding: 0 clamp(16px, 5vw, 28px);
+		width: 100%;
+		max-width: none;
+		min-width: 0;
 		height: 60vh;
 		min-height: 400px;
 	}
 
 	.sidebar {
 		max-width: none;
-		min-width: 0;
+		margin-left: 0;
 		border-left: none;
 		border-top: 1px solid var(--moss);
-		padding-top: 20px;
+		padding: 20px clamp(16px, 5vw, 28px);
 		height: auto;
 		flex: 0;
 	}

@@ -51,7 +51,7 @@ function buildContext(messages: ChatMessage[]): string {
 export class Chat extends Server<Env> {
 	static options = { hibernate: true };
 
-	messages = [] as ChatMessage[];
+	messages: ChatMessage[] = [];
 	customCss = "";
 	cssUpdatedAt = 0;
 	kimiCallTimestamps: number[] = [];
@@ -134,14 +134,9 @@ export class Chat extends Server<Env> {
 	}
 
 	saveMessage(message: ChatMessage) {
-		const existingMessage = this.messages.find((m) => m.id === message.id);
-		if (existingMessage) {
-			this.messages = this.messages.map((m) => {
-				if (m.id === message.id) {
-					return message;
-				}
-				return m;
-			});
+		const idx = this.messages.findIndex((m) => m.id === message.id);
+		if (idx !== -1) {
+			this.messages[idx] = message;
 		} else {
 			this.messages.push(message);
 		}
@@ -172,7 +167,7 @@ export class Chat extends Server<Env> {
 		);
 	}
 
-	async callKimi(recentMessages: ChatMessage[]) {
+	async callKimi(recentMessages: ChatMessage[]): Promise<string | null> {
 		const context = recentMessages.slice(-20).map((m) => ({
 			role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
 			content: m.role === "assistant" ? m.content : `${m.user}: ${m.content}`,
@@ -187,7 +182,13 @@ export class Chat extends Server<Env> {
 			max_tokens: 1024,
 		});
 
-		return response.response as string;
+		// Kimi K2.5 returns OpenAI-compatible chat completion format
+		const text = response?.response ?? response?.choices?.[0]?.message?.content;
+		if (!text) {
+			console.error("Unexpected AI response shape:", JSON.stringify(response).slice(0, 200));
+			return null;
+		}
+		return text as string;
 	}
 
 	async onMessage(connection: Connection, message: WSMessage) {
@@ -212,39 +213,33 @@ export class Chat extends Server<Env> {
 
 				this.recordKimiCall();
 
-				try {
-					const rawResponse = await this.callKimi(this.messages);
-					const { chat, css, edits } = parseKimiResponse(rawResponse);
+				const rawResponse = await this.callKimi(this.messages);
+				if (!rawResponse) return;
+				const { chat, css, edits } = parseKimiResponse(rawResponse);
 
-					// Send Kimi's chat reply
-					if (chat) {
-						const kimiMessage: ChatMessage = {
-							id: `kimi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-							content: chat,
-							user: "Kimi",
-							role: "assistant",
-						};
-						this.saveMessage(kimiMessage);
-						this.broadcastMessage({ type: "add", ...kimiMessage });
-					}
+				if (chat) {
+					const kimiMessage: ChatMessage = {
+						id: `kimi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+						content: chat,
+						user: "Kimi",
+						role: "assistant",
+					};
+					this.saveMessage(kimiMessage);
+					this.broadcastMessage({ type: "add", ...kimiMessage });
+				}
 
-					// Apply CSS changes
-					if (css) {
-						this.saveCss(css);
-						this.broadcastMessage({ type: "css", css });
-					}
+				if (css) {
+					this.saveCss(css);
+					this.broadcastMessage({ type: "css", css });
+				}
 
-					// Apply message edits
-					for (const edit of edits) {
-						const existing = this.messages.find((m) => m.id === edit.id);
-						if (existing) {
-							const updated: ChatMessage = { ...existing, content: edit.content };
-							this.saveMessage(updated);
-							this.broadcastMessage({ type: "update", ...updated });
-						}
+				for (const edit of edits) {
+					const existing = this.messages.find((m) => m.id === edit.id);
+					if (existing) {
+						const updated: ChatMessage = { ...existing, content: edit.content };
+						this.saveMessage(updated);
+						this.broadcastMessage({ type: "update", ...updated });
 					}
-				} catch (err) {
-					console.error("Kimi AI error:", err);
 				}
 			}
 		}
@@ -254,7 +249,7 @@ export class Chat extends Server<Env> {
 export default {
 	async fetch(request, env) {
 		return (
-			(await routePartykitRequest(request, { ...env })) ||
+			(await routePartykitRequest(request, env)) ||
 			env.ASSETS.fetch(request)
 		);
 	},
