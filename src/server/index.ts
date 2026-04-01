@@ -11,24 +11,9 @@ const KIMI_PATTERN = /\bkimi\b|\bk2\.?5\b/i;
 
 const CSS_RESET_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-const KIMI_SYSTEM_PROMPT = `You are Kimi, a playful and creative AI who lives inside a chatroom at gnome.science. You are chatting with real people.
-
-You have a special ability: you can change the CSS styling of the page. When you want to change the page's appearance, include a CSS code block in your response like this:
-
-\`\`\`css
-body { background: pink; }
-\`\`\`
-
-Rules:
-- You can ONLY change CSS. You cannot change HTML structure or JavaScript behavior.
-- Be creative and have fun with styling when asked!
-- Keep your chat responses concise and friendly.
-- If someone asks you to change the look of the page, do it enthusiastically.
-- You can change colors, fonts, sizes, animations, layouts — anything CSS can do.
-- The default stylesheet uses CSS variables like --bg, --text, --accent, --green, --border, etc. You can override these or write new rules.
-- Don't break the page — keep it usable (e.g. don't hide the input or make text invisible).
-- If no CSS change is needed, just chat normally without a CSS block.
-- Your name is Kimi. You also respond to K2.5.`;
+// Rate limit: max 10 Kimi calls per minute
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 10;
 
 function extractCss(text: string): { chat: string; css: string | null } {
 	const cssBlockRegex = /```css\s*\n([\s\S]*?)```/g;
@@ -49,9 +34,22 @@ export class Chat extends Server<Env> {
 	messages = [] as ChatMessage[];
 	customCss = "";
 	cssUpdatedAt = 0;
+	kimiCallTimestamps: number[] = [];
 
 	broadcastMessage(message: Message, exclude?: string[]) {
 		this.broadcast(JSON.stringify(message), exclude);
+	}
+
+	isRateLimited(): boolean {
+		const now = Date.now();
+		this.kimiCallTimestamps = this.kimiCallTimestamps.filter(
+			(t) => now - t < RATE_LIMIT_WINDOW_MS,
+		);
+		return this.kimiCallTimestamps.length >= RATE_LIMIT_MAX;
+	}
+
+	recordKimiCall() {
+		this.kimiCallTimestamps.push(Date.now());
 	}
 
 	onStart() {
@@ -96,7 +94,6 @@ export class Chat extends Server<Env> {
 			this.ctx.storage.sql.exec(
 				`INSERT INTO kv (key, value) VALUES ('css_updated_at', '0') ON CONFLICT (key) DO UPDATE SET value = '0'`,
 			);
-			// Broadcast reset to all connected clients
 			this.broadcastMessage({ type: "css", css: "" });
 		}
 	}
@@ -111,7 +108,6 @@ export class Chat extends Server<Env> {
 			} satisfies Message),
 		);
 
-		// Send current custom CSS
 		if (this.customCss) {
 			connection.send(
 				JSON.stringify({ type: "css", css: this.customCss } satisfies Message),
@@ -158,8 +154,7 @@ export class Chat extends Server<Env> {
 		);
 	}
 
-	async callKimi(userMessage: string, recentMessages: ChatMessage[]) {
-		// Build conversation context (last 20 messages for context)
+	async callKimi(recentMessages: ChatMessage[]) {
 		const context = recentMessages.slice(-20).map((m) => ({
 			role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
 			content: m.role === "assistant" ? m.content : `${m.user}: ${m.content}`,
@@ -167,10 +162,7 @@ export class Chat extends Server<Env> {
 
 		const ai = (this.env as any).AI;
 		const response = await ai.run("@cf/moonshotai/kimi-k2.5", {
-			messages: [
-				{ role: "system", content: KIMI_SYSTEM_PROMPT },
-				...context,
-			],
+			messages: context,
 			max_tokens: 1024,
 		});
 
@@ -178,20 +170,31 @@ export class Chat extends Server<Env> {
 	}
 
 	async onMessage(connection: Connection, message: WSMessage) {
-		// Broadcast the raw message to everyone else
 		this.broadcast(message);
 
 		const parsed = JSON.parse(message as string) as Message;
 		if (parsed.type === "add" || parsed.type === "update") {
 			this.saveMessage(parsed);
 
-			// Check if message mentions Kimi
 			if (parsed.type === "add" && KIMI_PATTERN.test(parsed.content)) {
+				if (this.isRateLimited()) {
+					const rateLimitMsg: ChatMessage = {
+						id: `kimi-${Date.now()}-rl`,
+						content: "I'm getting too many requests right now. Try again in a minute.",
+						user: "Kimi",
+						role: "assistant",
+					};
+					this.saveMessage(rateLimitMsg);
+					this.broadcastMessage({ type: "add", ...rateLimitMsg });
+					return;
+				}
+
+				this.recordKimiCall();
+
 				try {
-					const rawResponse = await this.callKimi(parsed.content, this.messages);
+					const rawResponse = await this.callKimi(this.messages);
 					const { chat, css } = extractCss(rawResponse);
 
-					// Send Kimi's chat response
 					if (chat) {
 						const kimiMessage: ChatMessage = {
 							id: `kimi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -203,7 +206,6 @@ export class Chat extends Server<Env> {
 						this.broadcastMessage({ type: "add", ...kimiMessage });
 					}
 
-					// Apply CSS changes
 					if (css) {
 						this.saveCss(css);
 						this.broadcastMessage({ type: "css", css });
