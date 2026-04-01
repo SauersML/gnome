@@ -200,6 +200,46 @@ function App() {
 		);
 	}
 
+	if (!name) {
+		return (
+			<>
+				<PixelBackground />
+				<div className="name-overlay">
+					<div className="name-dialog">
+						<div className="brand">
+							gnome<span className="dot">.</span>science
+						</div>
+						<form
+							className="name-dialog-form"
+							onSubmit={(e) => {
+								e.preventDefault();
+								const input = e.currentTarget.elements.namedItem(
+									"name",
+								) as HTMLInputElement;
+								const trimmed = input.value.trim();
+								if (!trimmed) return;
+								localStorage.setItem("gnome_username", trimmed);
+								setName(trimmed);
+							}}
+						>
+							<label className="name-dialog-label" htmlFor="name-input">Choose a username</label>
+							<input
+								id="name-input"
+								type="text"
+								name="name"
+								className="name-dialog-input"
+								placeholder="Your name..."
+								autoComplete="off"
+								autoFocus
+							/>
+							<button type="submit" className="name-dialog-btn">Join</button>
+						</form>
+					</div>
+				</div>
+			</>
+		);
+	}
+
 	return (
 		<>
 			<PixelBackground />
@@ -215,9 +255,7 @@ function App() {
 
 					{messages.length === 0 ? (
 						<div className="empty">
-							<div className="empty-text">
-								{!name ? "Pick a name to join." : "Nothing here yet."}
-							</div>
+							<div className="empty-text">Nothing here yet.</div>
 						</div>
 					) : (
 						<div className="messages">
@@ -235,54 +273,28 @@ function App() {
 					)}
 
 					<div className="compose">
-						{!name ? (
-							<form
-								className="compose-form"
-								onSubmit={(e) => {
-									e.preventDefault();
-									const input = e.currentTarget.elements.namedItem(
-										"name",
-									) as HTMLInputElement;
-									const trimmed = input.value.trim();
-									if (!trimmed) return;
-									localStorage.setItem("gnome_username", trimmed);
-									setName(trimmed);
-								}}
-							>
-								<input
-									type="text"
-									name="name"
-									className="compose-input"
-									placeholder="Enter your name..."
-									autoComplete="off"
-									autoFocus
-								/>
-								<button type="submit" className="compose-send">Join</button>
-							</form>
-						) : (
-							<form
-								className="compose-form"
-								onSubmit={(e) => {
-									e.preventDefault();
-									const input = e.currentTarget.elements.namedItem(
-										"content",
-									) as HTMLInputElement;
-									if (!input.value.trim()) return;
-									sendMessage(input.value, name);
-									input.value = "";
-								}}
-							>
-								<input
-									type="text"
-									name="content"
-									className="compose-input"
-									placeholder="Write something..."
-									autoComplete="off"
-								/>
-								<button type="submit" className="compose-send">Send</button>
-							</form>
-						)}
-						{name && <div className="compose-meta">as {name}</div>}
+						<form
+							className="compose-form"
+							onSubmit={(e) => {
+								e.preventDefault();
+								const input = e.currentTarget.elements.namedItem(
+									"content",
+								) as HTMLInputElement;
+								if (!input.value.trim()) return;
+								sendMessage(input.value, name);
+								input.value = "";
+							}}
+						>
+							<input
+								type="text"
+								name="content"
+								className="compose-input"
+								placeholder="Write something..."
+								autoComplete="off"
+							/>
+							<button type="submit" className="compose-send">Send</button>
+						</form>
+						<div className="compose-meta">as {name}</div>
 					</div>
 				</div>
 

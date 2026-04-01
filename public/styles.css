@@ -124,6 +124,7 @@ html, body {
 	padding: 5px 0;
 	opacity: 0;
 	animation: appear 0.01s steps(1) forwards;
+	animation-delay: 0s;
 }
 
 .msg:nth-child(1) { animation-delay: 0s; }
@@ -200,17 +201,82 @@ html, body {
 	align-items: stretch;
 }
 
-.name-prompt {
+.name-overlay {
+	position: fixed;
+	inset: 0;
+	display: flex;
 	align-items: center;
+	justify-content: center;
+	z-index: 100;
 }
 
-.name-prompt-label {
-	color: var(--sage);
+.name-dialog {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 28px;
+}
+
+.name-dialog .brand {
+	font-size: clamp(20px, 3vw, 28px);
+}
+
+.name-dialog-form {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 14px;
+}
+
+.name-dialog-label {
+	color: var(--earth);
 	font-family: "Hanken Grotesk", sans-serif;
 	font-size: clamp(13px, 1.5vw, 15px);
-	font-weight: 500;
-	white-space: nowrap;
-	padding-right: 8px;
+	font-weight: 400;
+	letter-spacing: 0.04em;
+}
+
+.name-dialog-input {
+	background: none;
+	border: 1px solid var(--earth);
+	border-radius: 6px;
+	padding: 10px 16px;
+	color: var(--light);
+	font-size: clamp(15px, 1.8vw, 18px);
+	font-family: "Hanken Grotesk", sans-serif;
+	font-weight: 400;
+	outline: none;
+	text-align: center;
+	width: 240px;
+}
+
+.name-dialog-input:focus {
+	border-color: var(--sage);
+}
+
+.name-dialog-input::placeholder {
+	color: var(--earth);
+	font-weight: 300;
+}
+
+.name-dialog-btn {
+	background: none;
+	border: 1px solid var(--sage);
+	border-radius: 6px;
+	color: var(--sage);
+	font-family: "Hanken Grotesk", sans-serif;
+	font-size: 12px;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	padding: 8px 28px;
+	cursor: pointer;
+	transition: background 0.15s, color 0.15s;
+}
+
+.name-dialog-btn:hover {
+	background: var(--sage);
+	color: var(--dark);
 }
 
 .compose-input {
