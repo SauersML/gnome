@@ -137,6 +137,7 @@ function App() {
 	const [name, setName] = useState<string | null>(() => localStorage.getItem("gnome_username"));
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [activeArticle, setActiveArticle] = useState<Article | null>(null);
+	const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 	const messagesEnd = useRef<HTMLDivElement>(null);
 	const initialLoad = useRef(true);
 	const applyCss = useKimiCss();
@@ -183,8 +184,6 @@ function App() {
 			</>
 		);
 	}
-
-	const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 
 	function sendMessage(content: string, userName: string) {
 		const chatMessage: ChatMessage = {

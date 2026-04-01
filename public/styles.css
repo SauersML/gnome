@@ -238,7 +238,7 @@ html, body {
 
 .name-dialog-input {
 	background: none;
-	border: 1px solid var(--earth);
+	border: 1px solid var(--sage);
 	border-radius: 6px;
 	padding: 10px 16px;
 	color: var(--light);
@@ -350,7 +350,7 @@ html, body {
 	font-weight: 600;
 	letter-spacing: 0.14em;
 	text-transform: uppercase;
-	color: var(--sage);
+	color: var(--light);
 	margin-bottom: 20px;
 	text-shadow: 0 0 8px rgba(10, 20, 12, 0.9);
 }
@@ -394,7 +394,7 @@ html, body {
 .sidebar-item-desc {
 	display: block;
 	font-size: 0.8em;
-	color: var(--sage);
+	color: var(--mist);
 	line-height: 1.45;
 	text-shadow: 0 0 8px rgba(10, 20, 12, 0.9);
 }
@@ -431,7 +431,7 @@ html, body {
 	background: none;
 	border: 1px solid var(--moss);
 	border-radius: 6px;
-	color: var(--sage);
+	color: var(--light);
 	font-family: "Hanken Grotesk", sans-serif;
 	font-size: 12px;
 	font-weight: 600;
@@ -459,7 +459,7 @@ html, body {
 
 .article-abstract {
 	font-size: 0.95em;
-	color: var(--sage);
+	color: var(--mist);
 	line-height: 1.55;
 	margin-bottom: 36px;
 	padding-bottom: 24px;
@@ -467,7 +467,7 @@ html, body {
 }
 
 .article-body {
-	color: var(--mist);
+	color: var(--light);
 	line-height: 1.75;
 }
 
@@ -511,4 +511,5 @@ html, body {
 		flex: 0;
 	}
 }
+
 

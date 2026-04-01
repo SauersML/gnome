@@ -91,7 +91,7 @@ function makePixel(col: number, row: number): PixelProps {
 	};
 }
 
-const HALO = 10; // how far the darkening spreads from text (in grid cells)
+const HALO = 6;
 
 export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	const ctx = canvas.getContext("2d")!;
@@ -263,28 +263,42 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				g = Math.min(255, Math.max(0, g)) | 0;
 				b = Math.min(255, Math.max(0, b)) | 0;
 
-				// soft organic darkening near text
-				// perturb this pixel's position with noise so shapes aren't rectangular
-				const nx1 = ((hash(col, row, 500) % 2000) - 1000) / 1000; // -1 to 1
-				const nx2 = ((hash(col, row, 600) % 2000) - 1000) / 1000;
-				const pCol = col + nx1 * 2.5;
-				const pRow = row + nx2 * 2.5;
-
+				// blacken near text with dissolve edge
 				let darken = 1.0;
+
+				// multi-octave noise for this pixel (computed once, reused)
+				const h0 = Math.abs(hash(col, row, 500));
+				const h1 = Math.abs(hash(col * 2 + 5, row * 2 + 3, 601));
+				const h2 = Math.abs(hash(col * 5 + 11, row * 3 + 7, 702));
+				const h3 = Math.abs(hash(col + row * 37, row - col * 13, 803));
+				// combine at different amplitudes for fractal-ish noise, range ~0-1
+				const pnoise = ((h0 % 500) * 0.4 + (h1 % 500) * 0.3 + (h2 % 500) * 0.2 + (h3 % 500) * 0.1) / 500;
+
 				for (let ri = 0; ri < regions.length; ri++) {
 					const reg = regions[ri];
-					// euclidean distance from perturbed point to rect
-					const dx = Math.max(reg.c0 - pCol, 0, pCol - reg.c1);
-					const dy = Math.max(reg.r0 - pRow, 0, pRow - reg.r1);
+					// true euclidean distance to rect edge
+					const dx = Math.max(reg.c0 - col, 0, col - reg.c1);
+					const dy = Math.max(reg.r0 - row, 0, row - reg.r1);
 					const dist = Math.sqrt(dx * dx + dy * dy);
 
 					if (dist >= HALO) continue;
 
-					// gaussian-ish falloff: strong near text, fading out
-					const t = dist / HALO; // 0 at text, 1 at edge of halo
-					const strength = 1.0 - t * t; // quadratic falloff (softer than linear)
-					const d = 1.0 - strength * 0.95; // darkest = 0.05 (nearly black, hint of texture)
-					darken = Math.min(darken, d);
+					if (dist < 0.5) {
+						// on or inside text — black
+						darken = 0;
+					} else {
+						// dissolve zone: use noise to decide if this pixel goes black
+						// pixels close to text are very likely black, far ones rarely
+						const t = dist / HALO; // 0 near text, 1 at edge
+						// warp threshold with noise so boundary is ragged
+						if (pnoise > t * t) {
+							darken = 0;
+						} else {
+							// partial dim for pixels that survive the dissolve
+							const fade = t * t;
+							darken = Math.min(darken, fade);
+						}
+					}
 				}
 
 				r = (r * darken) | 0;
