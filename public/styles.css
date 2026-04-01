@@ -47,6 +47,12 @@ html, body {
 }
 
 /* ---- Layout ---- */
+.layout {
+	display: flex;
+	height: 100%;
+	width: 100%;
+}
+
 .app {
 	display: flex;
 	flex-direction: column;
@@ -54,6 +60,7 @@ html, body {
 	max-width: 580px;
 	width: 100%;
 	margin-left: clamp(24px, 14vw, 22%);
+	flex-shrink: 0;
 }
 
 /* ---- Header ---- */
@@ -266,10 +273,159 @@ html, body {
 	to { opacity: 1; }
 }
 
+/* ---- Sidebar ---- */
+.sidebar {
+	flex: 1;
+	max-width: 380px;
+	min-width: 240px;
+	height: 100%;
+	overflow-y: auto;
+	padding: clamp(28px, 6vh, 52px) clamp(24px, 3vw, 40px);
+	padding-top: calc(clamp(28px, 6vh, 52px) + clamp(22px, 3.5vw, 30px) + clamp(16px, 3vh, 24px) + 2px);
+	border-left: 1px solid var(--moss);
+	scrollbar-width: none;
+}
+
+.sidebar::-webkit-scrollbar { display: none; }
+
+.sidebar-label {
+	font-family: "Syne", sans-serif;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--sage);
+	margin-bottom: 20px;
+}
+
+.sidebar-item {
+	display: block;
+	width: 100%;
+	background: none;
+	border: none;
+	border-bottom: 1px solid rgba(45, 90, 54, 0.3);
+	padding: 16px 0;
+	text-align: left;
+	cursor: pointer;
+	transition: border-color 0.15s;
+}
+
+.sidebar-item:hover {
+	border-color: var(--gold);
+}
+
+.sidebar-item:first-of-type {
+	border-top: 1px solid rgba(45, 90, 54, 0.3);
+}
+
+.sidebar-item-title {
+	display: block;
+	font-family: "Syne", sans-serif;
+	font-size: 0.95em;
+	font-weight: 600;
+	color: var(--light);
+	margin-bottom: 4px;
+	transition: color 0.15s;
+}
+
+.sidebar-item:hover .sidebar-item-title {
+	color: var(--gold);
+	text-shadow: 0 0 12px rgba(226, 184, 74, 0.2);
+}
+
+.sidebar-item-desc {
+	display: block;
+	font-size: 0.8em;
+	color: var(--sage);
+	line-height: 1.45;
+}
+
+/* ---- Article page ---- */
+.article-page {
+	max-width: 680px;
+	margin: 0 auto;
+	padding: clamp(32px, 6vh, 64px) clamp(20px, 4vw, 40px);
+	position: relative;
+	z-index: 1;
+}
+
+.article-back {
+	background: none;
+	border: none;
+	color: var(--sage);
+	font-family: "Hanken Grotesk", sans-serif;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	padding: 4px 0;
+	margin-bottom: 32px;
+	letter-spacing: 0.03em;
+	transition: color 0.15s;
+}
+
+.article-back:hover {
+	color: var(--glow);
+}
+
+.article-title {
+	font-family: "Syne", sans-serif;
+	font-size: clamp(22px, 4vw, 32px);
+	font-weight: 700;
+	color: var(--light);
+	line-height: 1.2;
+	margin-bottom: 12px;
+	text-shadow: 0 0 24px rgba(106, 236, 120, 0.15);
+}
+
+.article-abstract {
+	font-size: 0.95em;
+	color: var(--sage);
+	line-height: 1.55;
+	margin-bottom: 36px;
+	padding-bottom: 24px;
+	border-bottom: 1px solid rgba(45, 90, 54, 0.4);
+}
+
+.article-body {
+	color: var(--mist);
+	line-height: 1.75;
+}
+
+.article-body p {
+	margin-bottom: 16px;
+}
+
+.tex-block {
+	margin: 20px 0;
+	padding: 16px 0;
+	overflow-x: auto;
+	text-align: center;
+}
+
+.tex-block .katex-display {
+	margin: 0;
+}
+
 @media (max-width: 768px) {
+	.layout {
+		flex-direction: column;
+	}
+
 	.app {
 		margin-left: 0;
 		padding: 0 clamp(16px, 5vw, 28px);
+		height: 60vh;
+		min-height: 400px;
+	}
+
+	.sidebar {
+		max-width: none;
+		min-width: 0;
+		border-left: none;
+		border-top: 1px solid var(--moss);
+		padding-top: 20px;
+		height: auto;
+		flex: 0;
 	}
 
 	.divider {
