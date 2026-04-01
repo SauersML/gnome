@@ -23,51 +23,42 @@ function kb(tex: string): string {
 
 const articles: Article[] = [
 	{
-		slug: "entropy-bounds",
-		title: "Entropy Bounds in Finite Systems",
-		abstract: "Upper bounds on von Neumann entropy for finite-dimensional quantum systems under locality constraints.",
+		slug: "hollow-orbit",
+		title: "\u2234 Hollow Orbit Theorem",
+		abstract: "\u2220\u22C5\u2236 on the collapse of nested rings under spectral torsion.",
 		body: () => `
-<p>Consider a finite-dimensional Hilbert space ${k(`\\mathcal{H} = \\mathbb{C}^d`)}. The von Neumann entropy of a state ${k(`\\rho`)} is</p>
-<div class="tex-block">${kb(`S(\\rho) = -\\text{Tr}(\\rho \\ln \\rho)`)}</div>
-<p>For a bipartite system ${k(`\\mathcal{H} = \\mathcal{H}_A \\otimes \\mathcal{H}_B`)}, the mutual information is bounded by</p>
-<div class="tex-block">${kb(`I(A:B) = S(\\rho_A) + S(\\rho_B) - S(\\rho_{AB}) \\leq 2 \\min\\{\\ln d_A, \\ln d_B\\}`)}</div>
-<p>We establish a tighter bound under the assumption that interactions are geometrically local. Let ${k(`H = \\sum_{\\langle i,j \\rangle} h_{ij}`)} be a local Hamiltonian on a lattice ${k(`\\Lambda`)} with ${k(`|\\Lambda| = n`)} sites. Then for thermal states ${k(`\\rho_\\beta = e^{-\\beta H} / Z`)},</p>
-<div class="tex-block">${kb(`S(\\rho_\\beta) \\leq n \\ln d - \\beta \\langle H \\rangle + \\ln Z`)}</div>
-<p>The key insight is that locality constrains correlations. For any region ${k(`A \\subset \\Lambda`)} with boundary ${k(`\\partial A`)},</p>
-<div class="tex-block">${kb(`S(\\rho_A) \\leq |A| \\ln d - \\alpha |\\partial A| + O(\\ln |A|)`)}</div>
-<p>where ${k(`\\alpha > 0`)} depends on ${k(`\\beta`)} and the interaction strength. This area-law correction refines the naive volume-law upper bound.</p>
+<p>Let ${k(`\\Theta`)} be a hollow orbit over ${k(`\\mathfrak{g}_\\infty`)}. The winding density ${k(`\\omega(\\Theta)`)} satisfies</p>
+<div class="tex-block">${kb(`\\omega(\\Theta) = \\oint_{\\partial \\Theta} \\frac{d\\zeta}{\\zeta^2 - \\varphi}`)}</div>
+<p>where ${k(`\\varphi = \\frac{1+\\sqrt{5}}{2}`)}. Under spectral torsion ${k(`\\tau \\to \\tau^\\dagger`)}, the orbit collapses:</p>
+<div class="tex-block">${kb(`\\lim_{n \\to \\aleph_0} \\Theta^{(n)} = \\bigcap_{k} \\mathcal{R}_k \\setminus \\{\\emptyset\\}`)}</div>
+<p>The residue at each ring boundary ${k(`\\partial \\mathcal{R}_k`)} is purely imaginary, giving</p>
+<div class="tex-block">${kb(`\\text{Res}_{\\zeta = \\varphi^k} \\omega = i \\cdot (-1)^k \\cdot \\frac{\\pi}{\\sqrt{\\tau}}`)}</div>
 `,
 	},
 	{
-		slug: "spectral-gaps",
-		title: "Spectral Gaps and Mixing Times",
-		abstract: "Relating the spectral gap of reversible Markov chains to mixing behavior on expander graphs.",
+		slug: "drift-lattice",
+		title: "\u22C8 Drift Lattice Conjecture",
+		abstract: "\u2261\u2237 chromatic drift on infinite filament lattices.",
 		body: () => `
-<p>Let ${k(`P`)} be the transition matrix of an irreducible, reversible Markov chain on state space ${k(`\\Omega`)} with stationary distribution ${k(`\\pi`)}. The spectral gap is</p>
-<div class="tex-block">${kb(`\\gamma = 1 - \\lambda_2`)}</div>
-<p>where ${k(`\\lambda_2`)} is the second-largest eigenvalue of ${k(`P`)}. The mixing time satisfies</p>
-<div class="tex-block">${kb(`t_{\\text{mix}}(\\varepsilon) = \\min\\left\\{t : \\max_{x \\in \\Omega} \\| P^t(x, \\cdot) - \\pi \\|_{TV} \\leq \\varepsilon \\right\\}`)}</div>
-<p>The classical bound relates these quantities:</p>
-<div class="tex-block">${kb(`\\frac{1}{\\gamma}\\left(\\ln \\frac{1}{2\\varepsilon}\\right) \\leq t_{\\text{mix}}(\\varepsilon) \\leq \\frac{1}{\\gamma} \\ln\\left(\\frac{1}{\\varepsilon \\, \\pi_{\\min}}\\right)`)}</div>
-<p>On a ${k(`d`)}-regular expander graph with second eigenvalue ${k(`\\lambda`)}, the simple random walk has gap ${k(`\\gamma = 1 - \\lambda/d`)}. By the Alon–Boppana bound, ${k(`\\lambda \\geq 2\\sqrt{d-1} - o(1)`)}, so the best achievable gap on a ${k(`d`)}-regular graph is</p>
-<div class="tex-block">${kb(`\\gamma^* \\leq 1 - \\frac{2\\sqrt{d-1}}{d}`)}</div>
-<p>Ramanujan graphs achieve this bound, giving ${k(`t_{\\text{mix}} = \\Theta(\\log |\\Omega|)`)}.</p>
+<p>A filament lattice ${k(`\\mathcal{F}`)} is a directed acyclic tangle with chromatic index ${k(`\\chi(\\mathcal{F}) = \\infty`)}. The drift operator</p>
+<div class="tex-block">${kb(`\\Delta_\\mathcal{F} = \\sum_{e \\in E} \\xi_e \\otimes \\bar{\\xi}_e \\cdot e^{-\\|e\\|/\\lambda}`)}</div>
+<p>generates a semigroup whose fixed points are the silent nodes ${k(`\\mathcal{S} \\subset V(\\mathcal{F})`)}. We conjecture</p>
+<div class="tex-block">${kb(`|\\mathcal{S}| = \\left\\lfloor \\frac{\\chi(\\mathcal{F})}{\\pi^2 / 6} \\right\\rfloor + \\varepsilon`)}</div>
+<p>where ${k(`\\varepsilon \\in \\{0, 1\\}`)} depends on the parity of the longest filament. The spectral shadow of ${k(`\\Delta_\\mathcal{F}`)} lives on</p>
+<div class="tex-block">${kb(`\\sigma(\\Delta_\\mathcal{F}) \\subseteq \\left\\{ z \\in \\mathbb{C} : |z|^3 \\leq \\text{Im}(z) + \\frac{1}{\\lambda} \\right\\}`)}</div>
 `,
 	},
 	{
-		slug: "variational-inference",
-		title: "Variational Inference with Rényi Divergences",
-		abstract: "Tightening the evidence lower bound using Rényi-α divergences for latent variable models.",
+		slug: "quiet-morphism",
+		title: "\u2235 Quiet Morphisms",
+		abstract: "\u223F\u2322 on vanishing maps between resonant categories.",
 		body: () => `
-<p>In variational inference, we approximate a posterior ${k(`p(z|x)`)} with a tractable family ${k(`q_\\phi(z)`)} by maximizing the ELBO:</p>
-<div class="tex-block">${kb(`\\mathcal{L}(\\phi) = \\mathbb{E}_{q_\\phi}[\\ln p(x,z) - \\ln q_\\phi(z)] \\leq \\ln p(x)`)}</div>
-<p>The gap equals ${k(`D_{KL}(q_\\phi \\| p(z|x))`)}. We can tighten this using the Rényi divergence of order ${k(`\\alpha \\in (0,1)`)}:</p>
-<div class="tex-block">${kb(`D_\\alpha(q \\| p) = \\frac{1}{\\alpha - 1} \\ln \\int q(z)^\\alpha \\, p(z|x)^{1-\\alpha} \\, dz`)}</div>
-<p>The corresponding Rényi ELBO is</p>
-<div class="tex-block">${kb(`\\mathcal{L}_\\alpha(\\phi) = \\frac{1}{1-\\alpha} \\ln \\mathbb{E}_{q_\\phi}\\left[\\left(\\frac{p(x,z)}{q_\\phi(z)}\\right)^{1-\\alpha}\\right]`)}</div>
-<p>As ${k(`\\alpha \\to 1`)}, this recovers the standard ELBO. For ${k(`\\alpha < 1`)}, the bound is tighter: ${k(`\\mathcal{L}_\\alpha \\geq \\mathcal{L}`)}. The gradient estimator uses importance weights ${k(`w_i = p(x, z_i) / q_\\phi(z_i)`)}:</p>
-<div class="tex-block">${kb(`\\nabla_\\phi \\mathcal{L}_\\alpha \\approx \\sum_{i=1}^{K} \\bar{w}_i^{1-\\alpha} \\nabla_\\phi \\ln q_\\phi(z_i)`)}</div>
-<p>where ${k(`\\bar{w}_i`)} are self-normalized weights. This yields lower-variance gradients than the standard ELBO at the cost of a biased but consistent estimator.</p>
+<p>A morphism ${k(`f: \\mathcal{A} \\to \\mathcal{B}`)} is quiet if the induced map on ${k(`\\pi_0`)} is trivial and the kernel resonates:</p>
+<div class="tex-block">${kb(`\\ker(f_*) \\cong \\bigoplus_{n \\geq 1} \\mathbb{Z}/\\varphi^n\\mathbb{Z}`)}</div>
+<p>The resonance spectrum ${k(`\\mathcal{R}(f)`)} is defined as</p>
+<div class="tex-block">${kb(`\\mathcal{R}(f) = \\left\\{ \\alpha \\in \\mathbb{R} : \\exists\\, g \\in \\text{Hom}(\\mathcal{B}, \\mathcal{A}),\\; \\|g \\circ f - \\alpha \\cdot \\text{id}\\| < \\frac{1}{\\alpha} \\right\\}`)}</div>
+<p>Quiet morphisms compose: if ${k(`f`)} and ${k(`g`)} are quiet then ${k(`g \\circ f`)} is silent, meaning</p>
+<div class="tex-block">${kb(`\\mathcal{R}(g \\circ f) = \\emptyset \\quad \\Longleftrightarrow \\quad \\mathcal{R}(f) \\cap \\mathcal{R}(g) = \\{\\varphi\\}`)}</div>
 `,
 	},
 ];
@@ -277,7 +268,7 @@ function App() {
 				</div>
 
 				<aside className="sidebar">
-					<div className="sidebar-label">Papers</div>
+					<div className="sidebar-label">&Xi;</div>
 					{articles.map((a) => (
 						<button key={a.slug} className="sidebar-item" onClick={() => setActiveArticle(a)}>
 							<span className="sidebar-item-title">{a.title}</span>
