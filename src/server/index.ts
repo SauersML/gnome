@@ -221,10 +221,10 @@ const DEFAULT_PAGES: Page[] = [
 ];
 
 function buildContext(messages: ChatMessage[], customCss: string, pages: Page[]): string {
-	const recentIds = messages.slice(-100).map((m) => `  ${m.id} (${m.user}): ${m.content}`).join("\n");
+	const recentIds = messages.slice(-30).map((m) => `  ${m.id} (${m.user}): ${m.content}`).join("\n");
 	const currentCssSnippet = customCss ? `\n\nCustom CSS currently applied:\n${customCss}` : "\n\nNo custom CSS is currently applied.";
 	const pagesSnippet = pages.length > 0
-		? `\n\nCurrent Pages in the sidebar:\n${pages.map((p) => `  slug="${p.slug}" title="${p.title}" abstract="${p.abstract}"\n  body: ${p.body.slice(0, 200)}${p.body.length > 200 ? "..." : ""}`).join("\n")}`
+		? `\n\nCurrent Pages in the sidebar:\n${pages.map((p) => `  slug="${p.slug}" title="${p.title}" abstract="${p.abstract}"`).join("\n")}`
 		: "\n\nNo pages yet.";
 	return `You're chatting in a live room at gnome.science. Here are the recent messages:\n${recentIds}\n\nPage HTML structure:\n${PAGE_STRUCTURE}\n\nBase CSS (always loaded):\n${BASE_CSS}${currentCssSnippet}${pagesSnippet}\n\nYour custom CSS gets injected into a <style> tag in <head>, so it overrides the base styles above.\n\nYou have a few tools you can use by including fenced code blocks in your response. Totally optional — feel free to just chat.\n\n\`\`\`css-add — appends new CSS rules to what's already there.\n\`\`\`css-add\n.msg-body { color: red; }\n\`\`\`\n\n\`\`\`css-edit — tweaks existing custom CSS. Put the old snippet above a --- line and the replacement below.\n\`\`\`css-edit\n.msg-body { color: red; }\n---\n.msg-body { color: blue; }\n\`\`\`\n\n\`\`\`css-reset — wipes all custom CSS back to defaults.\n\`\`\`css-reset\n\`\`\`\n\n\`\`\`edit id=<message_id> — rewrites a message.\n\`\`\`edit id=abc123\nNew content\n\`\`\`\n\n\`\`\`clear-messages — wipes all chat messages.\n\`\`\`clear-messages\n\`\`\`\n\n\`\`\`page-add — creates a new page in the sidebar. Body is HTML. For math, use <span class="k">LaTeX</span> for inline or <span class="kb">LaTeX</span> for display math (rendered by KaTeX on the client).\n\`\`\`page-add\nslug: my-page\ntitle: My Page Title\nabstract: A short description\n---\n<p>Consider <span class="k">f(x) = x^2</span>. Then</p>\n<div class="tex-block"><span class="kb">\\\\int_0^1 f(x)\\\\,dx = \\\\frac{1}{3}</span></div>\n\`\`\`\n\n\`\`\`page-edit slug=<slug> — edits an existing page. Include only the fields you want to change. If changing body, put it below ---.\n\`\`\`page-edit slug=my-page\ntitle: Updated Title\nabstract: Updated description\n---\n<p>New body HTML</p>\n\`\`\`\n\nPlease use css-add or css-edit instead of plain css blocks so the tools work correctly.`;
 }
@@ -432,7 +432,13 @@ export class Chat extends Server<Env> {
 
 				this.recordKimiCall();
 
-				const rawResponse = await this.callKimi(this.messages);
+				let rawResponse: string | null;
+				try {
+					rawResponse = await this.callKimi(this.messages);
+				} catch (e) {
+					console.error("Kimi call failed:", e instanceof Error ? e.message : e);
+					return;
+				}
 				if (!rawResponse) return;
 				const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(rawResponse);
 

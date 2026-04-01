@@ -90,6 +90,7 @@ function App() {
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [pages, setPages] = useState<Page[]>([]);
 	const [activePage, setActivePage] = useState<Page | null>(null);
+	const [mobileTab, setMobileTab] = useState<"chat" | "pages">("chat");
 	const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 	const messagesEnd = useRef<HTMLDivElement>(null);
 	const initialLoad = useRef(true);
@@ -173,7 +174,7 @@ function App() {
 		<>
 			<PixelBackground />
 			<div className="layout">
-				<div className="app">
+				<div className={`app ${mobileTab !== "chat" ? "mobile-hidden" : ""}`}>
 					<header className="header">
 						<div className="brand">
 							gnome<span className="dot">.</span>science
@@ -239,8 +240,8 @@ function App() {
 					</div>
 				</div>
 
-				<aside className="sidebar">
-					<div className="sidebar-label">Pages</div>
+				<aside className={`sidebar ${mobileTab === "pages" ? "mobile-visible" : ""}`}>
+					<div className="sidebar-label">Kimi's Creations</div>
 					{pages.map((p) => (
 						<button key={p.slug} className="sidebar-item" onClick={() => setActivePage(p)}>
 							<span className="sidebar-item-title">{p.title}</span>
@@ -248,6 +249,10 @@ function App() {
 						</button>
 					))}
 				</aside>
+			</div>
+			<div className="mobile-tabs">
+				<button className={`mobile-tab ${mobileTab === "chat" ? "active" : ""}`} onClick={() => setMobileTab("chat")}>Chat</button>
+				<button className={`mobile-tab ${mobileTab === "pages" ? "active" : ""}`} onClick={() => setMobileTab("pages")}>Pages</button>
 			</div>
 		</>
 	);
