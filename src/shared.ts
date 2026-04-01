@@ -42,4 +42,13 @@ export type Message =
 	| {
 			type: "page-update";
 			page: Page;
+	  }
+	| {
+			type: "typing";
+			user: string;
+			isTyping: boolean;
+	  }
+	| {
+			type: "presence";
+			count: number;
 	  };

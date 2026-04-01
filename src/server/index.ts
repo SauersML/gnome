@@ -83,8 +83,8 @@ function parseKimiResponse(text: string): KimiAction {
 			const slug = header.match(/slug:\s*(.+)/)?.[1]?.trim() || "";
 			const title = header.match(/title:\s*(.+)/)?.[1]?.trim() || "";
 			const abstract = header.match(/abstract:\s*(.+)/)?.[1]?.trim() || "";
-			if (slug && title) {
-				pageAdds.push({ slug, title, abstract, body });
+			if (slug && title && /^[a-z0-9][a-z0-9-]{0,63}$/.test(slug)) {
+				pageAdds.push({ slug, title: title.slice(0, 2000), abstract: abstract.slice(0, 5000), body: body.slice(0, 500000) });
 			}
 		}
 		chat = chat.replace(match[0], "").trim();
@@ -170,55 +170,83 @@ html, body { background: #0a140c; color: var(--mist); font-family: "Hanken Grote
 .sidebar-item-title { font-family: "Syne", sans-serif; font-weight: 600; color: var(--light); }
 .sidebar-item-desc { font-size: 0.8em; color: var(--mist); }`;
 
+const BING_BONG_BODY = `<h3>Modeling choices</h3>
+<ol>
+<li>Casing, articles, and tense are normalized; repeated sentences included once (idempotent).</li>
+<li>Possessive friend-phrases are relational: "X is my friend" becomes <span class="k">\\operatorname{friend}(X, \\text{me})</span>.</li>
+<li>The positive copular fragment generates a thin category <span class="k">\\mathcal{C}</span> on discourse entities.</li>
+<li>The ungrammatical "best than" is preserved as a primitive <span class="k">\\operatorname{bestThan}</span>.</li>
+<li>Binary predicates are profunctors (bimodules) on <span class="k">\\mathcal{C}</span>, giving transport along copular identifications.</li>
+<li>Negative statements use separate profunctors (<span class="k">\\operatorname{NotIs}</span>, <span class="k">\\operatorname{NegRel}</span>) — the theory is paraconsistent, not explosive.</li>
+<li>"Bing will always win" is a presheaf <span class="k">W : \\mathcal{C}^{\\text{op}} \\to \\mathbf{Bool}</span>.</li>
+</ol>
+
+<h3>Discourse entities</h3>
+<div class="tex-block"><span class="kb">\\text{Ob} = \\{\\xi,\\; \\bar\\xi,\\; \\text{me},\\; \\text{you},\\; \\text{us},\\; \\text{we},\\; \\text{friends},\\; g,\\; b,\\; \\beta^+,\\; \\beta^-,\\; \\beta^*,\\; \\tau\\}</span></div>
+<p>where <span class="k">\\xi = \\text{bing}</span>, <span class="k">\\bar\\xi = \\text{bong}</span>, <span class="k">g = \\text{good}</span>, <span class="k">b = \\text{bad}</span>, <span class="k">\\beta^+ = \\text{better}</span>, <span class="k">\\beta^- = \\text{worse}</span>, <span class="k">\\beta^* = \\text{best}</span>, <span class="k">\\tau = \\text{topic}</span>.</p>
+
+<h3>Copular category</h3>
+<p>The positive copular fragment is a thin category: a preorder <span class="k">(\\text{Ob}, \\leq)</span> with generating morphisms</p>
+<div class="tex-block"><span class="kb">\\text{we} \\leq \\text{friends} \\leq \\xi, \\quad \\xi \\leq \\text{friends}, \\quad \\bar\\xi \\leq b, \\quad b \\leq \\bar\\xi</span></div>
+<div class="tex-block"><span class="kb">\\xi \\leq g, \\quad \\beta^* \\leq \\xi \\leq \\beta^*, \\quad \\beta^* \\leq \\text{me} \\leq \\xi \\leq \\text{me}</span></div>
+<div class="tex-block"><span class="kb">\\text{me} \\leq \\text{you} \\leq \\text{me}, \\quad \\text{me} \\leq \\text{us} \\leq \\text{we} \\leq \\xi \\leq \\text{we}, \\quad \\text{we} \\leq \\beta^*</span></div>
+<p>closed under reflexivity and transitivity. This forces the equivalence class</p>
+<div class="tex-block"><span class="kb">[\\xi] = \\{\\xi,\\; \\text{friends},\\; \\beta^*,\\; \\text{me},\\; \\text{you},\\; \\text{us},\\; \\text{we}\\}, \\qquad |[\\xi]| = 7</span></div>
+<p>with <span class="k">[\\bar\\xi] = \\{\\bar\\xi, b\\}</span> and <span class="k">\\{\\tau\\}</span> as singletons. The quotient <span class="k">\\mathcal{C}/\\!\\cong</span> has exactly 3 objects.</p>
+
+<h3>Isomorphism</h3>
+<p>Define <span class="k">a \\cong b \\;\\Leftrightarrow\\; a \\leq b \\;\\wedge\\; b \\leq a</span>. Then:</p>
+<div class="tex-block"><span class="kb">\\xi \\cong \\text{friends} \\cong \\beta^* \\cong \\text{me} \\cong \\text{you} \\cong \\text{us} \\cong \\text{we}</span></div>
+<div class="tex-block"><span class="kb">\\bar\\xi \\cong b</span></div>
+
+<h3>Categorical infrastructure</h3>
+<p>A thin category <span class="k">\\mathcal{C}</span> has <span class="k">|\\text{Hom}(a,b)| \\leq 1</span> for all <span class="k">a,b</span>. A <em>bimodule</em> (profunctor) <span class="k">R : \\mathcal{C}^{\\text{op}} \\times \\mathcal{C} \\to \\mathbf{Bool}</span> satisfies</p>
+<div class="tex-block"><span class="kb">a' \\leq a,\\; R(a,b),\\; b \\leq b' \\;\\Longrightarrow\\; R(a',b')</span></div>
+<p>A <em>presheaf</em> <span class="k">P : \\mathcal{C}^{\\text{op}} \\to \\mathbf{Bool}</span> satisfies <span class="k">a' \\leq a \\wedge P(a) \\Rightarrow P(a')</span>.</p>
+
+<h3>Positive relations</h3>
+<p>Each verb <span class="k">v</span> yields a bimodule <span class="k">P_v</span> on <span class="k">\\mathcal{C}</span>. Generators include:</p>
+<div class="tex-block"><span class="kb">\\operatorname{ignoring}(\\xi, \\bar\\xi), \\quad \\operatorname{superior}(\\xi, \\bar\\xi), \\quad \\operatorname{friend}(\\xi, \\text{me}), \\quad \\operatorname{friend}(\\text{me}, \\text{you})</span></div>
+<div class="tex-block"><span class="kb">\\operatorname{better}(g, b), \\quad \\operatorname{better}(\\beta^+, \\beta^-), \\quad \\operatorname{worse}(\\beta^-, \\beta^+), \\quad \\operatorname{bestThan}(\\beta^*, \\bar\\xi)</span></div>
+<p>All reflexive positive relations <span class="k">v(\\xi, \\xi)</span> hold for: focused, confident, brave, happy, proud, grateful, joyful, loving, good-like.</p>
+
+<h3>Negative relations (paraconsistent)</h3>
+<p>The negative copula <span class="k">\\operatorname{NotIs}</span> is a separate bimodule with generators:</p>
+<div class="tex-block"><span class="kb">\\operatorname{NotIs}(\\xi, \\bar\\xi), \\quad \\operatorname{NotIs}(\\bar\\xi, \\xi), \\quad \\operatorname{NotIs}(b, g), \\quad \\operatorname{NotIs}(g, b)</span></div>
+<div class="tex-block"><span class="kb">\\operatorname{NotIs}(b, \\text{me}), \\quad \\operatorname{NotIs}(b, \\text{you}), \\quad \\operatorname{NotIs}(b, \\text{us}), \\quad \\operatorname{NotIs}(b, \\text{we}), \\quad \\operatorname{NotIs}(b, \\beta^*)</span></div>
+<p>Coexists with <span class="k">\\xi \\leq g</span> without contradiction since <span class="k">\\operatorname{NotIs} \\neq \\neg(\\leq)</span>.</p>
+<p>Negative verb relations <span class="k">N_v(\\xi, \\bar\\xi)</span> hold for: fighting, interested, worried, threatened, afraid, angry, jealous, bitter, sad, hateful, evil-like. Also <span class="k">N_{\\text{know}}(\\text{me}, \\tau)</span>.</p>
+
+<h3>Modal presheaf</h3>
+<div class="tex-block"><span class="kb">W(\\xi) \\;\\checkmark \\quad\\Longrightarrow\\quad W(a) \\text{ for all } a \\in [\\xi]</span></div>
+<p>That is, <span class="k">W(\\text{me})\\;\\checkmark</span>, <span class="k">W(\\text{you})\\;\\checkmark</span>, <span class="k">W(\\text{us})\\;\\checkmark</span>, <span class="k">W(\\text{we})\\;\\checkmark</span>, <span class="k">W(\\beta^*)\\;\\checkmark</span>.</p>
+
+<h3>Presented theory</h3>
+<div class="tex-block"><span class="kb">\\mathcal{T} = \\left(\\mathcal{C},\\; \\operatorname{NotIs},\\; \\{P_v\\}_{v \\in V},\\; \\{N_v\\}_{v \\in V},\\; W\\right)</span></div>
+
+<h3>Selected derived results</h3>
+<div class="tex-block"><span class="kb">\\operatorname{better}(g, \\bar\\xi) \\quad\\text{(by transport: } b \\leq \\bar\\xi\\text{)}</span></div>
+<div class="tex-block"><span class="kb">\\operatorname{friend}(\\xi, \\xi) \\quad\\text{(by transport: } \\text{me} \\leq \\xi\\text{)}</span></div>
+<div class="tex-block"><span class="kb">\\operatorname{NotIs}(\\text{me}, \\bar\\xi) \\quad\\text{(by transport: } \\text{me} \\leq \\xi\\text{)}</span></div>
+<div class="tex-block"><span class="kb">N_{\\text{know}}(\\xi, \\tau) \\quad\\text{(by transport: } \\xi \\leq \\text{me}\\text{)}</span></div>`;
+
 const DEFAULT_PAGES: Page[] = [
-	{
-		slug: "golden-contour",
-		title: "\u2234 Golden Contour Integrals",
-		abstract: "\u2220\u22C5\u2236 residues of rational functions at powers of the golden ratio.",
-		body: `<p>Let <span class="k">\\varphi = \\frac{1+\\sqrt{5}}{2}</span> and consider the rational function <span class="k">f(z) = \\frac{1}{z^2 - z - 1}</span>. Its poles are at <span class="k">z = \\varphi</span> and <span class="k">z = 1 - \\varphi = -1/\\varphi</span>. We compute</p>
-<div class="tex-block"><span class="kb">\\text{Res}_{z=\\varphi}\\, f = \\frac{1}{2\\varphi - 1} = \\frac{1}{\\sqrt{5}}</span></div>
-<p>Let <span class="k">\\gamma</span> be a positively oriented circle of radius 2 centered at the origin. Both poles lie inside <span class="k">\\gamma</span>, so by the residue theorem</p>
-<div class="tex-block"><span class="kb">\\oint_\\gamma \\frac{dz}{z^2 - z - 1} = 2\\pi i \\left( \\frac{1}{\\sqrt{5}} + \\frac{-1}{\\sqrt{5}} \\right) = 0</span></div>
-<p>This vanishing is not a coincidence. For any monic quadratic with distinct roots, the sum of residues of <span class="k">1/(z^2 + bz + c)</span> is always zero.</p>
-<p>The <span class="k">n</span>-th Fibonacci number satisfies <span class="k">F_n = \\frac{\\varphi^n - \\psi^n}{\\sqrt{5}}</span> where <span class="k">\\psi = -1/\\varphi</span>. We can recover this via</p>
-<div class="tex-block"><span class="kb">F_n = \\frac{1}{2\\pi i} \\oint_\\gamma \\frac{z^n}{z^2 - z - 1}\\, dz = \\frac{\\varphi^n - \\psi^n}{\\sqrt{5}}</span></div>
-<p>Setting <span class="k">x = 1/10</span> gives the curious decimal <span class="k">\\sum F_n / 10^n = 10/89</span>.</p>`,
-	},
-	{
-		slug: "random-walk-torus",
-		title: "\u22C8 Random Walks on a Torus",
-		abstract: "\u2261\u2237 mixing times for the discrete random walk on a torus.",
-		body: `<p>Consider the simple random walk on the discrete torus <span class="k">\\mathbb{Z}_n \\times \\mathbb{Z}_n</span>: at each step, move to one of the 4 neighbors uniformly at random. The stationary distribution is uniform.</p>
-<p>The transition matrix has eigenvalues indexed by <span class="k">(j,k) \\in \\mathbb{Z}_n^2</span>:</p>
-<div class="tex-block"><span class="kb">\\lambda_{j,k} = \\frac{1}{2}\\left(\\cos\\frac{2\\pi j}{n} + \\cos\\frac{2\\pi k}{n}\\right)</span></div>
-<p>The spectral gap is <span class="k">\\gamma = 1 - \\cos(2\\pi/n) = \\frac{2\\pi^2}{n^2} + O(n^{-4})</span>. The mixing time satisfies</p>
-<div class="tex-block"><span class="kb">t_{\\text{mix}}(\\varepsilon) = \\Theta(n^2 \\log n)</span></div>
-<p>Compare with the 1D cycle, where the mixing time is also <span class="k">\\Theta(n^2 \\log n)</span>. The torus is not faster despite having more edges; the bottleneck is the same Cheeger constant.</p>`,
-	},
-	{
-		slug: "thin-categories",
-		title: "\u2235 Thin Categories & Preorders",
-		abstract: "\u223F\u2322 profunctors on posets and paraconsistent negation.",
-		body: `<p>A thin category is a category in which every hom-set has at most one morphism. Writing <span class="k">a \\leq b</span> when <span class="k">\\text{Hom}(a,b) \\neq \\emptyset</span>:</p>
-<div class="tex-block"><span class="kb">\\text{id}_a : a \\leq a \\quad\\text{(reflexivity)}</span></div>
-<div class="tex-block"><span class="kb">a \\leq b,\\; b \\leq c \\;\\Longrightarrow\\; a \\leq c \\quad\\text{(transitivity)}</span></div>
-<p>A profunctor <span class="k">P : \\mathcal{C}^{\\text{op}} \\times \\mathcal{C} \\to \\textbf{Bool}</span> on a thin category satisfies</p>
-<div class="tex-block"><span class="kb">a' \\leq a,\\; P(a,b),\\; b \\leq b' \\;\\Longrightarrow\\; P(a', b')</span></div>
-<p>Given a thin category with relation <span class="k">\\leq</span>, we can independently define a second relation <span class="k">\\not\\sim</span>. The pair is paraconsistent if we permit both simultaneously without deriving <span class="k">\\bot</span>.</p>`,
-	},
 	{
 		slug: "bing-bong",
 		title: "\u22A2 Bing/Bong",
 		abstract: "\u22A8\u22A3 a categorical formalization of copular discourse.",
-		body: `<p>We model the Bing/Bong discourse as a presented theory over a thin category. The objects are discourse entities:</p>
-<div class="tex-block"><span class="kb">\\text{Ob} = \\{\\xi, \\bar\\xi, \\mu, \\nu, \\omega, \\phi, \\psi, g, b, \\beta^+, \\beta^-, \\beta^*, \\tau\\}</span></div>
-<p>Since <span class="k">\\xi \\leq \\psi</span> and <span class="k">\\psi \\leq \\xi</span>, we get <span class="k">\\xi \\cong \\psi</span>. By transitivity, all of <span class="k">\\{\\xi, \\psi, \\mu, \\nu, \\omega, \\phi, \\beta^*\\}</span> collapse to a single equivalence class <span class="k">[\\xi]</span>.</p>
-<p>The negative copula profunctor coexists with <span class="k">\\xi \\leq g</span> and <span class="k">\\bar\\xi \\leq b</span> without contradiction, because <span class="k">\\text{NotIs}</span> is a separate profunctor, not the negation of <span class="k">\\leq</span>.</p>
-<p>The full presented theory is</p>
-<div class="tex-block"><span class="kb">\\mathcal{T} = \\left(\\mathcal{C},\\; \\text{NotIs},\\; \\{P_v\\},\\; \\{N_v\\},\\; W\\right)</span></div>
-<p>with <span class="k">|[\\xi]| = 7</span>, <span class="k">|[\\bar\\xi]| = 2</span>, and <span class="k">|\\{\\tau\\}| = 1</span>. The quotient category has exactly 3 objects.</p>`,
+		body: BING_BONG_BODY,
 	},
 ];
+
+function sanitizeCss(css: string): string {
+	// Strip url(), @import, expression(), and javascript: to prevent data exfiltration
+	return css
+		.replace(/@import\b[^;]*/gi, "/* blocked import */")
+		.replace(/url\s*\([^)]*\)/gi, "/* blocked url */")
+		.replace(/expression\s*\([^)]*\)/gi, "/* blocked expression */")
+		.replace(/javascript\s*:/gi, "/* blocked */");
+}
 
 function buildContext(messages: ChatMessage[], customCss: string, pages: Page[]): string {
 	const recentIds = messages.slice(-30).map((m) => `  ${m.id} (${m.user}): ${m.content}`).join("\n");
@@ -240,6 +268,11 @@ export class Chat extends Server<Env> {
 
 	broadcastMessage(message: Message, exclude?: string[]) {
 		this.broadcast(JSON.stringify(message), exclude);
+	}
+
+	broadcastPresence() {
+		const count = [...this.getConnections()].length;
+		this.broadcastMessage({ type: "presence", count });
 	}
 
 	isRateLimited(): boolean {
@@ -335,6 +368,12 @@ export class Chat extends Server<Env> {
 				JSON.stringify({ type: "css", css: this.customCss } satisfies Message),
 			);
 		}
+
+		this.broadcastPresence();
+	}
+
+	onClose() {
+		this.broadcastPresence();
 	}
 
 	saveMessage(message: ChatMessage) {
@@ -392,25 +431,40 @@ export class Chat extends Server<Env> {
 			content: m.role === "assistant" ? m.content : `${m.user}: ${m.content}`,
 		}));
 
-		// Inject context about the environment as the first user message
 		const contextMsg = { role: "user" as const, content: buildContext(recentMessages, this.customCss, this.pages) };
 
 		const ai = (this.env as any).AI;
+		if (!ai) {
+			console.error("AI binding not available");
+			return null;
+		}
+		console.log("Calling Kimi with", context.length, "messages");
 		const response = await ai.run("@cf/moonshotai/kimi-k2.5", {
 			messages: [contextMsg, ...context],
-			max_tokens: 1024,
+			max_tokens: 20480,
 		});
+		console.log("Kimi response type:", typeof response, "keys:", response ? Object.keys(response) : "null");
 
-		// Kimi K2.5 returns OpenAI-compatible chat completion format
-		const text = response?.response ?? response?.choices?.[0]?.message?.content;
+		const msg = response?.choices?.[0]?.message;
+		const text = response?.response ?? msg?.content ?? msg?.reasoning_content ?? msg?.reasoning;
 		if (!text) {
-			console.error("Unexpected AI response shape:", JSON.stringify(response).slice(0, 200));
+			console.error("Unexpected AI response shape:", JSON.stringify(response).slice(0, 500));
 			return null;
 		}
 		return text as string;
 	}
 
 	async onMessage(connection: Connection, message: WSMessage) {
+		// Per-connection rate limit: 30 messages per 10 seconds
+		const now = Date.now();
+		const state = (connection as any)._rl || { timestamps: [], blocked: false };
+		state.timestamps = state.timestamps.filter((t: number) => now - t < 10000);
+		if (state.timestamps.length >= 30) {
+			return; // silently drop
+		}
+		state.timestamps.push(now);
+		(connection as any)._rl = state;
+
 		this.broadcast(message);
 
 		const parsed = JSON.parse(message as string) as Message;
@@ -422,7 +476,7 @@ export class Chat extends Server<Env> {
 					const rateLimitMsg: ChatMessage = {
 						id: `kimi-${Date.now()}-rl`,
 						content: "I'm getting too many requests right now. Try again in a minute.",
-						user: "Kimi",
+						user: "Kimi K2.5",
 						role: "assistant",
 					};
 					this.saveMessage(rateLimitMsg);
@@ -431,22 +485,28 @@ export class Chat extends Server<Env> {
 				}
 
 				this.recordKimiCall();
+				console.log("Kimi triggered by:", parsed.content.slice(0, 100));
+
+				this.broadcastMessage({ type: "typing", user: "Kimi K2.5", isTyping: true });
 
 				let rawResponse: string | null;
 				try {
 					rawResponse = await this.callKimi(this.messages);
 				} catch (e) {
 					console.error("Kimi call failed:", e instanceof Error ? e.message : e);
+					this.broadcastMessage({ type: "typing", user: "Kimi K2.5", isTyping: false });
 					return;
 				}
+				this.broadcastMessage({ type: "typing", user: "Kimi K2.5", isTyping: false });
 				if (!rawResponse) return;
+
 				const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(rawResponse);
 
 				if (chat) {
 					const kimiMessage: ChatMessage = {
 						id: `kimi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
 						content: chat,
-						user: "Kimi",
+						user: "Kimi K2.5",
 						role: "assistant",
 					};
 					this.saveMessage(kimiMessage);
@@ -467,13 +527,14 @@ export class Chat extends Server<Env> {
 				// Apply css-edit find-and-replace operations
 				for (const edit of cssEdits) {
 					if (this.customCss.includes(edit.old)) {
-						this.saveCss(this.customCss.replace(edit.old, edit.new));
+						this.saveCss(sanitizeCss(this.customCss.replace(edit.old, edit.new)));
 						this.broadcastMessage({ type: "css", css: this.customCss });
 					}
 				}
 
 				if (cssAdd) {
-					const newCss = this.customCss ? this.customCss + "\n" + cssAdd : cssAdd;
+					const safe = sanitizeCss(cssAdd);
+					const newCss = this.customCss ? this.customCss + "\n" + safe : safe;
 					this.saveCss(newCss);
 					this.broadcastMessage({ type: "css", css: newCss });
 				}
@@ -511,11 +572,38 @@ export class Chat extends Server<Env> {
 
 	async onRequest(request: Request) {
 		const url = new URL(request.url);
+		const authHeader = request.headers.get("Authorization");
+		const adminKey = (this.env as any).ADMIN_KEY;
+		const isAuthed = adminKey && authHeader === `Bearer ${adminKey}`;
+
 		if (url.pathname.endsWith("/clear") && request.method === "POST") {
+			if (!isAuthed) return new Response("unauthorized", { status: 401 });
 			this.messages = [];
 			this.ctx.storage.sql.exec(`DELETE FROM messages`);
 			this.broadcastMessage({ type: "all", messages: [] });
 			return new Response("cleared");
+		}
+		if (url.pathname.endsWith("/reseed-pages") && request.method === "POST") {
+			if (!isAuthed) return new Response("unauthorized", { status: 401 });
+			for (const page of DEFAULT_PAGES) {
+				this.savePage(page);
+			}
+			this.broadcastMessage({ type: "pages", pages: this.pages });
+			return new Response("reseeded " + DEFAULT_PAGES.length + " pages");
+		}
+		if (url.pathname.endsWith("/delete-pages") && request.method === "POST") {
+			if (!isAuthed) return new Response("unauthorized", { status: 401 });
+			const keep = new URL(request.url).searchParams.get("keep") || "";
+			const slugs = keep.split(",").filter(Boolean);
+			if (slugs.length > 0) {
+				this.pages = this.pages.filter((p) => slugs.includes(p.slug));
+				this.ctx.storage.sql.exec(`DELETE FROM pages WHERE slug NOT IN (${slugs.map(() => "?").join(",")})`, ...slugs);
+			} else {
+				this.pages = [];
+				this.ctx.storage.sql.exec(`DELETE FROM pages`);
+			}
+			this.broadcastMessage({ type: "pages", pages: this.pages });
+			return new Response("done, kept: " + slugs.join(", "));
 		}
 		return new Response("not found", { status: 404 });
 	}

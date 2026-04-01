@@ -1,5 +1,370 @@
 const PX = 18;
 
+const VERT = `
+attribute vec2 a_pos;
+void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
+`;
+
+const FRAG = `
+precision highp float;
+
+uniform float u_time;
+uniform vec2 u_res;
+uniform float u_px;
+uniform sampler2D u_halo;
+uniform vec2 u_gridSize;
+
+float hash(vec2 p, float seed) {
+    vec3 p3 = fract(vec3(p.xyx + seed) * vec3(0.1031, 0.1030, 0.0973));
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+vec3 wavelengthToXYZ(float nm) {
+    float t1 = (nm - 442.0) * (nm < 442.0 ? 0.0624 : 0.0374);
+    float t2 = (nm - 599.8) * (nm < 599.8 ? 0.0264 : 0.0323);
+    float t3 = (nm - 501.1) * (nm < 501.1 ? 0.0490 : 0.0382);
+    float t4 = (nm - 568.8) * (nm < 568.8 ? 0.0213 : 0.0247);
+    float t5 = (nm - 530.9) * (nm < 530.9 ? 0.0613 : 0.0322);
+    float t6 = (nm - 437.0) * (nm < 437.0 ? 0.0845 : 0.0278);
+    float x = 0.362*exp(-0.5*t1*t1) + 1.056*exp(-0.5*t2*t2) - 0.065*exp(-0.5*t3*t3);
+    float y = 0.821*exp(-0.5*t4*t4) + 0.286*exp(-0.5*t5*t5);
+    float z = 1.217*exp(-0.5*t6*t6) + 0.681*exp(-0.5*t3*t3);
+    return max(vec3(0.0), vec3(x, y, z));
+}
+
+vec3 xyzToRGB(vec3 xyz) {
+    return vec3(
+        3.2406*xyz.x - 1.5372*xyz.y - 0.4986*xyz.z,
+       -0.9689*xyz.x + 1.8758*xyz.y + 0.0415*xyz.z,
+        0.0557*xyz.x - 0.2040*xyz.y + 1.0570*xyz.z
+    );
+}
+
+float planck(float nm, float tempK) {
+    float lam = nm * 1.0e-9;
+    return 1.0 / (pow(lam, 5.0) * (exp(1.4388e-2 / (lam * tempK)) - 1.0));
+}
+float spectrum(float nm, float tempK) {
+    return planck(nm, tempK) / planck(560.0, tempK);
+}
+
+float fresnelSchlick(float cosTheta, float r0) {
+    float x = 1.0 - cosTheta;
+    float x2 = x * x;
+    return r0 + (1.0 - r0) * x2 * x2 * x;
+}
+
+// Thin-film: Fabry-Perot for low-finesse coating
+float thinFilm(float nm, float d, float nFilm, float cosI) {
+    float sinI = sqrt(max(0.0, 1.0 - cosI*cosI));
+    float sinR = sinI / nFilm;
+    float cosR = sqrt(max(0.0, 1.0 - sinR*sinR));
+    float opd = 2.0 * nFilm * d * cosR;
+    float phase = opd / nm * 6.2831853 + 3.1415927;
+    float R = pow((nFilm - 1.0)/(nFilm + 1.0), 2.0);
+    float F = 4.0 * R / ((1.0 - R) * (1.0 - R));
+    float sinH = sin(phase * 0.5);
+    return 1.0 / (1.0 + F * sinH * sinH);
+}
+
+// Voronoi caustic network
+float caustics(vec2 p, float t) {
+    float c = 0.0;
+    for (int layer = 0; layer < 2; layer++) {
+        float scale = (layer == 0) ? 6.0 : 10.0;
+        float speed = (layer == 0) ? 0.12 : 0.08;
+        vec2 uv = p * scale + vec2(t * speed, t * speed * 0.7);
+        vec2 ip = floor(uv);
+        float minD1 = 10.0;
+        float minD2 = 10.0;
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                vec2 neighbor = vec2(float(dx), float(dy));
+                vec2 cellId = ip + neighbor;
+                vec2 offset = vec2(
+                    hash(cellId, 1.0) + 0.3*sin(t*0.2 + hash(cellId, 2.0)*6.28),
+                    hash(cellId, 3.0) + 0.3*cos(t*0.15 + hash(cellId, 4.0)*6.28)
+                );
+                float d = length(fract(uv) - neighbor - offset);
+                if (d < minD1) { minD2 = minD1; minD1 = d; }
+                else if (d < minD2) { minD2 = d; }
+            }
+        }
+        float edge = minD2 - minD1;
+        float causticLine = exp(-edge * 12.0);
+        float glow = exp(-minD1 * 3.0) * 0.3;
+        float w = (layer == 0) ? 0.6 : 0.4;
+        c += (causticLine + glow) * w;
+    }
+    return c;
+}
+
+void main() {
+    vec2 pixel = gl_FragCoord.xy;
+    pixel.y = u_res.y - pixel.y;
+
+    vec2 cell = floor(pixel / u_px);
+    float col = cell.x;
+    float row = cell.y;
+    float cols = u_gridSize.x;
+    float rows = u_gridSize.y;
+    float nx = col / cols;
+    float ny = row / rows;
+    vec2 subPx = fract(pixel / u_px);
+    float s = u_time / 1000.0;
+
+    // Per-pixel material (deterministic)
+    float h1 = hash(cell, 0.0);
+    float h2 = hash(cell, 33.0);
+    float h3 = hash(cell, 66.0);
+    float h4 = hash(cell, 99.0);
+    float h5 = hash(cell, 150.0);
+    float h6 = hash(cell, 200.0);
+    float h7 = hash(cell, 250.0);
+
+    float ior = h1 < 0.05 ? 1.9 + h1*3.0 :
+                h1 < 0.2  ? 1.55 + h1 :
+                            1.3 + h1*0.3;
+
+    float dispersion = 3000.0 + h2 * 10000.0;
+    float absCenter = 510.0 + h3 * 180.0;
+    float absWidth = 35.0 + hash(cell, 77.0) * 50.0;
+    float absStrength = 1.8 + h4 * 2.5;
+    float thickness = 0.5 + hash(cell, 111.0) * 0.9;
+
+    float filmThickness = 80.0 + hash(cell, 300.0) * 400.0;
+    float filmIOR = 1.2 + hash(cell, 310.0) * 0.6;
+    float filmPresence = smoothstep(0.6, 0.8, hash(cell, 320.0));
+
+    float p1 = h5 * 6.283;
+    float p2 = h6 * 6.283;
+    float p3 = h7 * 6.283;
+
+    // Base dark pixel color (same palette as original)
+    int palIdx = int(mod(h1 * 5.0, 5.0));
+    vec3 baseColor;
+    if (palIdx == 0) baseColor = vec3(3.0, 12.0, 8.0);
+    else if (palIdx == 1) baseColor = vec3(4.0, 14.0, 10.0);
+    else if (palIdx == 2) baseColor = vec3(3.0, 10.0, 11.0);
+    else if (palIdx == 3) baseColor = vec3(5.0, 13.0, 7.0);
+    else baseColor = vec3(3.0, 11.0, 11.0);
+    float bv = hash(cell, 400.0) * 4.0 - 2.0;
+    baseColor += bv;
+
+    // ─── Sweeping hue waves ───
+    // 4 rotating wave fronts at irrational-ratio speeds so they never repeat
+    float w1a = s * 0.17;
+    float w2a = s * 0.13 + 2.1;
+    float w3a = s * 0.09 + 4.3;
+    float w4a = s * 0.23 + 1.0;
+    vec2 w1d = vec2(cos(w1a), sin(w1a));
+    vec2 w2d = vec2(cos(w2a), sin(w2a));
+    vec2 w3d = vec2(cos(w3a), sin(w3a));
+    vec2 w4d = vec2(cos(w4a), sin(w4a));
+
+    // Each wave has different spatial frequency for complex interference
+    float sw1 = sin(dot(vec2(nx, ny), w1d) * 7.0 + s * 0.35);
+    float sw2 = sin(dot(vec2(nx, ny), w2d) * 5.0 + s * 0.28);
+    float sw3 = sin(dot(vec2(nx, ny), w3d) * 11.0 + s * 0.22);
+    float sw4 = sin(dot(vec2(nx, ny), w4d) * 3.5 + s * 0.40);
+
+    // Absorption center: 4 wave components + per-pixel phase for rich shifting
+    float absShift = 35.0*sin(s*0.18 + p1 + nx*4.0 + ny*3.0) * (0.5 + 0.5*sw1)
+                   + 25.0*sin(s*0.25 + p2 + nx*2.5 - ny*3.5) * (0.5 + 0.5*sw2)
+                   + 18.0*sin(s*0.35 + p3 - nx*3.0 + ny*2.0) * (0.5 + 0.5*sw3)
+                   + 12.0*cos(s*0.42 + p1*0.7 + nx*5.0 + ny*1.5) * (0.5 + 0.5*sw4);
+    float absC = absCenter + absShift;
+    float thickMod = thickness * (0.75 + 0.25*sin(s*0.12 + p2 + sw1*0.5 + sw3*0.3));
+    float filmT = filmThickness * (1.0 + 0.35*sin(s*0.2 + p3 + sw2*0.4));
+
+    // ─── 6 lights: Lissajous paths that sweep the full screen ───
+    // Irrational frequency ratios so paths never exactly repeat
+    vec2 lightPos[6];
+    float lightPower[6];
+    float lightRadius[6];
+    float lightTempK[6];
+
+    // L0: cool teal, wide sweep, Lissajous 3:2
+    lightPos[0] = vec2(
+        0.5 + 0.55*sin(s*0.19*3.0 + 0.0),
+        0.5 + 0.50*sin(s*0.19*2.0 + 1.2)
+    );
+    lightPower[0] = 0.50; lightRadius[0] = 0.65; lightTempK[0] = 6000.0;
+
+    // L1: cool blue-white, Lissajous 5:3, perturbed
+    lightPos[1] = vec2(
+        0.5 + 0.50*sin(s*0.14*5.0 + 0.8) + 0.08*sin(s*0.41),
+        0.5 + 0.45*sin(s*0.14*3.0 + 2.5) + 0.06*cos(s*0.53)
+    );
+    lightPower[1] = 0.45; lightRadius[1] = 0.55; lightTempK[1] = 8000.0;
+
+    // L2: warm amber band, figure-eight (2:1)
+    lightPos[2] = vec2(
+        0.5 + 0.48*sin(s*0.22*2.0 + 3.7),
+        0.5 + 0.42*sin(s*0.22*1.0 + 0.4)
+    );
+    lightPower[2] = 0.38; lightRadius[2] = 0.5; lightTempK[2] = 3500.0;
+
+    // L3: green-white daylight, slow diagonal drift with loops
+    lightPos[3] = vec2(
+        0.5 + 0.40*sin(s*0.11) + 0.15*sin(s*0.37 + 1.0),
+        0.5 + 0.40*cos(s*0.13) + 0.12*cos(s*0.43 + 2.0)
+    );
+    lightPower[3] = 0.35; lightRadius[3] = 0.5; lightTempK[3] = 5200.0;
+
+    // L4: cool teal, Lissajous 7:4, fast traveler
+    lightPos[4] = vec2(
+        0.5 + 0.45*sin(s*0.18*7.0 + 5.0),
+        0.5 + 0.40*sin(s*0.18*4.0 + 1.8)
+    );
+    lightPower[4] = 0.30; lightRadius[4] = 0.4; lightTempK[4] = 7000.0;
+
+    // L5: violet accent, tight spiral
+    lightPos[5] = vec2(
+        0.5 + (0.25 + 0.20*sin(s*0.08))*sin(s*0.35),
+        0.5 + (0.25 + 0.20*sin(s*0.08))*cos(s*0.35)
+    );
+    lightPower[5] = 0.22; lightRadius[5] = 0.35; lightTempK[5] = 10000.0;
+
+    // Spectral integration (8 wavelengths, same as original)
+    vec3 totalXYZ = vec3(0.0);
+
+    // Caustic enhancement
+    float caust = caustics(vec2(nx, ny), s) * 0.12;
+
+    for (int wi = 0; wi < 8; wi++) {
+        float nm;
+        if      (wi == 0) nm = 420.0;
+        else if (wi == 1) nm = 460.0;
+        else if (wi == 2) nm = 500.0;
+        else if (wi == 3) nm = 530.0;
+        else if (wi == 4) nm = 560.0;
+        else if (wi == 5) nm = 590.0;
+        else if (wi == 6) nm = 630.0;
+        else              nm = 670.0;
+
+        vec3 cmf = wavelengthToXYZ(nm);
+        float n = ior + dispersion / (nm * nm);
+
+        // Beer-Lambert absorption
+        float absDelta = (nm - absC) / absWidth;
+        float alpha = absStrength * exp(-0.5 * absDelta * absDelta);
+        float transmission = exp(-alpha * thickMod);
+
+        // Thin-film interference
+        float filmMod = 1.0;
+        if (filmPresence > 0.0) {
+            float viewCos = 0.85 + 0.1*(subPx.x + subPx.y - 1.0);
+            filmMod = mix(1.0, thinFilm(nm, filmT, filmIOR, viewCos), filmPresence);
+        }
+
+        float intensity = 0.0;
+
+        for (int li = 0; li < 6; li++) {
+            vec2 lp = lightPos[li];
+            float lPow = lightPower[li];
+            float lRad = lightRadius[li];
+            float lTemp;
+            if      (li == 0) lTemp = lightTempK[0];
+            else if (li == 1) lTemp = lightTempK[1];
+            else if (li == 2) lTemp = lightTempK[2];
+            else if (li == 3) lTemp = lightTempK[3];
+            else if (li == 4) lTemp = lightTempK[4];
+            else              lTemp = lightTempK[5];
+
+            vec2 dv = vec2(nx, ny) - lp;
+            float d2 = dot(dv, dv);
+            float dist = sqrt(d2);
+
+            float falloff = lPow * exp(-d2 / (2.0*lRad*lRad));
+            if (falloff < 0.002) continue;
+
+            float spec = spectrum(nm, lTemp);
+            float cosI = max(0.01, 1.0 - dist*0.6);
+
+            // Snell's law
+            float sinI = sqrt(max(0.0, 1.0 - cosI*cosI));
+            float sinR = sinI / n;
+
+            float r0 = pow((1.0 - n)/(1.0 + n), 2.0);
+            float fres = fresnelSchlick(cosI, r0);
+
+            if (sinR >= 1.0) {
+                // Total internal reflection
+                intensity += falloff * spec * 0.6 * transmission;
+            } else {
+                float cosR = sqrt(max(0.0, 1.0 - sinR*sinR));
+
+                // Caustic focusing from refraction
+                float causticBoost = 1.0 + caust * (n - 1.0) * 3.0;
+
+                // Primary transmission
+                intensity += falloff * (1.0 - fres) * transmission * spec * filmMod * causticBoost;
+
+                // Internal reflection (single bounce)
+                float intFres = fresnelSchlick(cosR, r0);
+                intensity += falloff * fres * intFres * transmission * transmission * spec * 0.3;
+            }
+        }
+
+        // Crystal sparkle for high-IOR pixels
+        if (n > 1.7) {
+            float phase = sin(s*0.5 + col*0.8*(n - 1.3) + row*1.1)
+                        * sin(s*0.3 - col*0.35 + row*0.6*(n - 1.3));
+            if (phase > 0.2) {
+                intensity += (n - 1.5) * (phase - 0.2) * transmission * 0.4;
+            }
+        }
+
+        totalXYZ += intensity * cmf;
+    }
+
+    // XYZ to RGB — same scale as original (0-255 space)
+    float scale = 65.0;
+    vec3 lr = xyzToRGB(totalXYZ * scale);
+
+    float r = baseColor.x + lr.x;
+    float g = baseColor.y + lr.y;
+    float b = baseColor.z + lr.z;
+
+    // Clamp to 0-255
+    r = clamp(r, 0.0, 255.0);
+    g = clamp(g, 0.0, 255.0);
+    b = clamp(b, 0.0, 255.0);
+
+    // Pixel gap
+    float gapSize = 0.06;
+    float gapFade = smoothstep(0.0, gapSize, subPx.x) * smoothstep(0.0, gapSize, subPx.y)
+                  * smoothstep(0.0, gapSize, 1.0 - subPx.x) * smoothstep(0.0, gapSize, 1.0 - subPx.y);
+    float gapDim = mix(0.7, 1.0, gapFade);
+    r *= gapDim;
+    g *= gapDim;
+    b *= gapDim;
+
+    // Text halo dimming
+    vec2 haloUV = (cell + 0.5) / u_gridSize;
+    float dim = texture2D(u_halo, haloUV).r;
+    r *= dim;
+    g *= dim;
+    b *= dim;
+
+    gl_FragColor = vec4(r/255.0, g/255.0, b/255.0, 1.0);
+}
+`;
+
+function compileShader(gl: WebGLRenderingContext, type: number, src: string): WebGLShader {
+	const sh = gl.createShader(type)!;
+	gl.shaderSource(sh, src);
+	gl.compileShader(sh);
+	if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+		console.error(gl.getShaderInfoLog(sh));
+		gl.deleteShader(sh);
+		throw new Error("Shader compile failed");
+	}
+	return sh;
+}
+
 function hash(x: number, y: number, seed: number = 0): number {
 	let h = (x + seed * 137) * 374761393 + (y + seed * 51) * 668265263;
 	h = (h ^ (h >> 13)) * 1274126177;
@@ -7,113 +372,71 @@ function hash(x: number, y: number, seed: number = 0): number {
 	return h;
 }
 
-const WAVELENGTHS = [420, 460, 500, 530, 560, 590, 630, 670];
-
-function wavelengthToXYZ(nm: number): [number, number, number] {
-	const t1 = (nm - 442.0) * (nm < 442 ? 0.0624 : 0.0374);
-	const t2 = (nm - 599.8) * (nm < 599.8 ? 0.0264 : 0.0323);
-	const t3 = (nm - 501.1) * (nm < 501.1 ? 0.0490 : 0.0382);
-	const t4 = (nm - 568.8) * (nm < 568.8 ? 0.0213 : 0.0247);
-	const t5 = (nm - 530.9) * (nm < 530.9 ? 0.0613 : 0.0322);
-	const t6 = (nm - 437.0) * (nm < 437 ? 0.0845 : 0.0278);
-
-	const x = 0.362 * Math.exp(-0.5 * t1 * t1)
-		+ 1.056 * Math.exp(-0.5 * t2 * t2)
-		- 0.065 * Math.exp(-0.5 * t3 * t3);
-	const y = 0.821 * Math.exp(-0.5 * t4 * t4)
-		+ 0.286 * Math.exp(-0.5 * t5 * t5);
-	const z = 1.217 * Math.exp(-0.5 * t6 * t6)
-		+ 0.681 * Math.exp(-0.5 * t3 * t3);
-	return [Math.max(0, x), Math.max(0, y), Math.max(0, z)];
-}
-
-function xyzToRGB(x: number, y: number, z: number): [number, number, number] {
-	return [
-		3.2406 * x - 1.5372 * y - 0.4986 * z,
-		-0.9689 * x + 1.8758 * y + 0.0415 * z,
-		0.0557 * x - 0.2040 * y + 1.0570 * z,
-	];
-}
-
-const WAVE_XYZ = WAVELENGTHS.map(wavelengthToXYZ);
-
-interface PixelProps {
-	ior: number;
-	dispersion: number;
-	baseAbsCenter: number;
-	absWidth: number;
-	absStrength: number;
-	thickness: number;
-	// unique phase offsets per pixel for complex motion
-	p1: number;
-	p2: number;
-	p3: number;
-	baseR: number;
-	baseG: number;
-	baseB: number;
-}
-
-function makePixel(col: number, row: number): PixelProps {
-	const h1 = hash(col, row);
-	const h2 = hash(col, row, 33);
-	const h3 = hash(col, row, 66);
-	const h4 = hash(col, row, 99);
-	const h5 = hash(col, row, 150);
-
-	const typeRoll = (Math.abs(h1) % 1000) / 1000;
-	let ior: number;
-	if (typeRoll < 0.05) ior = 1.9 + typeRoll * 3;
-	else if (typeRoll < 0.2) ior = 1.55 + typeRoll;
-	else ior = 1.3 + typeRoll * 0.3;
-
-	const dispersion = 3000 + (Math.abs(h2) % 10000);
-	const absCenter = 480 + (Math.abs(h3) % 200);
-	const absWidth = 35 + (Math.abs(h3 >> 10) % 50);
-	const absStrength = 1.8 + (Math.abs(h4) % 250) / 100;
-	const thickness = 0.5 + (Math.abs(hash(col, row, 111)) % 100) / 100 * 0.9;
-
-	const p1 = (Math.abs(h5) % 6283) / 1000;
-	const p2 = (Math.abs(hash(col, row, 200)) % 6283) / 1000;
-	const p3 = (Math.abs(hash(col, row, 250)) % 6283) / 1000;
-
-	const palIdx = Math.abs(h1 >> 4) % 5;
-	const bases: [number, number, number][] = [
-		[4, 12, 6], [5, 15, 8], [3, 10, 10],
-		[6, 14, 5], [4, 13, 9],
-	];
-	const [baseR, baseG, baseB] = bases[palIdx];
-	const v = ((h1 >> 8) % 4) - 2;
-
-	return {
-		ior, dispersion, baseAbsCenter: absCenter, absWidth, absStrength, thickness,
-		p1, p2, p3,
-		baseR: baseR + v, baseG: baseG + v, baseB: baseB + v,
-	};
-}
-
-const HALO = 5; // scatter radius in grid cells around text glyphs
-
 export function initPixelCanvas(canvas: HTMLCanvasElement) {
-	const ctx = canvas.getContext("2d")!;
+	const gl = canvas.getContext("webgl", { antialias: false, alpha: false })!;
+	if (!gl) {
+		console.error("WebGL not available");
+		return () => {};
+	}
+
+	const vs = compileShader(gl, gl.VERTEX_SHADER, VERT);
+	const fs = compileShader(gl, gl.FRAGMENT_SHADER, FRAG);
+	const prog = gl.createProgram()!;
+	gl.attachShader(prog, vs);
+	gl.attachShader(prog, fs);
+	gl.linkProgram(prog);
+	if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+		console.error(gl.getProgramInfoLog(prog));
+		throw new Error("Program link failed");
+	}
+	gl.useProgram(prog);
+
+	const buf = gl.createBuffer()!;
+	gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+	const aPos = gl.getAttribLocation(prog, "a_pos");
+	gl.enableVertexAttribArray(aPos);
+	gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+	const uTime = gl.getUniformLocation(prog, "u_time")!;
+	const uRes = gl.getUniformLocation(prog, "u_res")!;
+	const uPx = gl.getUniformLocation(prog, "u_px")!;
+	const uGridSize = gl.getUniformLocation(prog, "u_gridSize")!;
+	const uHalo = gl.getUniformLocation(prog, "u_halo")!;
+
+	const haloTex = gl.createTexture()!;
+	gl.activeTexture(gl.TEXTURE0);
+	gl.bindTexture(gl.TEXTURE_2D, haloTex);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+	gl.uniform1i(uHalo, 0);
+
 	let animId: number;
-	let pixels: PixelProps[][] = [];
 	let cols = 0;
 	let rows = 0;
+	let haloData: Uint8Array = new Uint8Array(0);
+	const HALO = 5;
 
-	// Collect text node rects every frame (fast — just DOM queries, no canvas)
 	type Rect = { c0: number; r0: number; c1: number; r1: number };
-	let textRects: Rect[] = [];
 
-	function updateTextRects() {
+	function updateTextRects(): Rect[] {
 		const root = document.getElementById("root");
-		if (!root) { textRects = []; return; }
+		if (!root) return [];
 		const rects: Rect[] = [];
 		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 		const range = document.createRange();
 		let node: Text | null;
 		while ((node = walker.nextNode() as Text | null)) {
-			if (!node.textContent || !node.textContent.trim()) continue;
-			range.selectNodeContents(node);
+			const txt = node.textContent;
+			if (!txt || !txt.trim()) continue;
+			// Trim range to actual non-whitespace characters to avoid trailing space rects
+			const start = txt.search(/\S/);
+			const end = txt.search(/\S\s*$/) + 1;
+			if (start < 0 || end <= start) continue;
+			range.setStart(node, start);
+			range.setEnd(node, end);
 			const crs = range.getClientRects();
 			for (let i = 0; i < crs.length; i++) {
 				const r = crs[i];
@@ -127,140 +450,29 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 			if (r.width < 1 || r.height < 1) continue;
 			rects.push({ c0: r.left / PX, r0: r.top / PX, c1: r.right / PX, r1: r.bottom / PX });
 		}
-		textRects = rects;
+		return rects;
 	}
 
-	function build() {
-		cols = Math.ceil(canvas.width / PX);
-		rows = Math.ceil(canvas.height / PX);
-		pixels = [];
-		for (let row = 0; row < rows; row++) {
-			const r: PixelProps[] = [];
-			for (let col = 0; col < cols; col++) r.push(makePixel(col, row));
-			pixels.push(r);
+	function getSidebarBorderCol(): number {
+		const sidebar = document.querySelector(".sidebar") as HTMLElement | null;
+		if (!sidebar) return -1;
+		const rect = sidebar.getBoundingClientRect();
+		return Math.floor(rect.left / PX);
+	}
+
+	function buildHaloTexture(textRects: Rect[]) {
+		for (let i = 0; i < cols * rows; i++) haloData[i] = 255;
+
+		// Black out the pixel column overlapping the sidebar border
+		const borderCol = getSidebarBorderCol();
+		if (borderCol >= 0 && borderCol < cols) {
+			for (let row = 0; row < rows; row++) {
+				haloData[row * cols + borderCol] = 0;
+			}
 		}
-	}
-
-	function resize() {
-		canvas.width = window.innerWidth;
-		canvas.height = window.innerHeight;
-		build();
-	}
-
-	function spectralPower(nm: number, tempK: number): number {
-		const lambda = nm * 1e-9;
-		return 1.0 / (Math.pow(lambda, 5) * (Math.exp(1.4388e-2 / (lambda * tempK)) - 1));
-	}
-
-	const TEMPS = [3000, 4200, 5500, 7000, 9000];
-	const SPECTRA = TEMPS.map((temp) => {
-		const sp = WAVELENGTHS.map((nm) => spectralPower(nm, temp));
-		const mx = Math.max(...sp);
-		return sp.map((s) => s / mx);
-	});
-
-	function draw(t: number) {
-		if (cols === 0 || rows === 0) return;
-		const w = canvas.width;
-		const h = canvas.height;
-		const s = t / 1000;
-
-		updateTextRects();
-
-		// 4 lights at different color temperatures, sweeping wide orbits
-		const lights = [
-			{ x: 0.5 + 0.5 * Math.sin(s * 0.22), y: 0.5 + 0.4 * Math.cos(s * 0.17), power: 0.55, si: 1, radius: 0.6 },
-			{ x: 0.5 + 0.45 * Math.cos(s * 0.19), y: 0.5 + 0.45 * Math.sin(s * 0.26), power: 0.45, si: 3, radius: 0.55 },
-			{ x: 0.5 + 0.4 * Math.sin(s * 0.31), y: 0.5 + 0.35 * Math.cos(s * 0.24), power: 0.35, si: 0, radius: 0.45 },
-			{ x: 0.5 + 0.35 * Math.cos(s * 0.28), y: 0.5 + 0.4 * Math.sin(s * 0.35), power: 0.3, si: 4, radius: 0.45 },
-		];
-
-		// 3 large-scale hue waves: rotating direction vectors sweep color bands across screen
-		const w1a = s * 0.15, w1dx = Math.cos(w1a), w1dy = Math.sin(w1a);
-		const w2a = s * 0.11 + 2.0, w2dx = Math.cos(w2a), w2dy = Math.sin(w2a);
-		const w3a = s * 0.08 + 4.5, w3dx = Math.cos(w3a), w3dy = Math.sin(w3a);
-
-		ctx.fillStyle = "#040a05";
-		ctx.fillRect(0, 0, w, h);
 
 		for (let row = 0; row < rows; row++) {
 			for (let col = 0; col < cols; col++) {
-				const px = pixels[row][col];
-				const nx = col / cols;
-				const ny = row / rows;
-
-				// --- Complex hue modulation ---
-				// Large spatial waves rotate over time, creating sweeping color bands
-				const sw1 = Math.sin((nx * w1dx + ny * w1dy) * 8.0 + s * 0.3);
-				const sw2 = Math.sin((nx * w2dx + ny * w2dy) * 6.0 + s * 0.25);
-				const sw3 = Math.sin((nx * w3dx + ny * w3dy) * 10.0 + s * 0.2);
-
-				// Per-pixel phase creates fine detail; spatial waves create large patterns
-				const absShift =
-					30 * Math.sin(s * 0.18 + px.p1 + nx * 4 + ny * 3) * (0.6 + 0.4 * sw1)
-					+ 20 * Math.sin(s * 0.25 + px.p2 + nx * 2.5 - ny * 3.5) * (0.5 + 0.5 * sw2)
-					+ 15 * Math.sin(s * 0.35 + px.p3 - nx * 3 + ny * 2) * (0.5 + 0.5 * sw3);
-
-				const absCenter = px.baseAbsCenter + absShift;
-				const thickMod = px.thickness * (0.85 + 0.15 * Math.sin(s * 0.12 + px.p2 + sw1 * 0.5));
-
-				let totalX = 0;
-				let totalY = 0;
-				let totalZ = 0;
-
-				for (let wi = 0; wi < WAVELENGTHS.length; wi++) {
-					const nm = WAVELENGTHS[wi];
-					const [wx, wy, wz] = WAVE_XYZ[wi];
-
-					const ior = px.ior + px.dispersion / (nm * nm);
-
-					const absDelta = (nm - absCenter) / px.absWidth;
-					const alpha = px.absStrength * Math.exp(-0.5 * absDelta * absDelta);
-					const transmission = Math.exp(-alpha * thickMod);
-
-					let intensity = 0;
-
-					for (let li = 0; li < lights.length; li++) {
-						const l = lights[li];
-						const dx = nx - l.x;
-						const dy = ny - l.y;
-						const d2 = dx * dx + dy * dy;
-
-						const falloff = l.power * Math.exp(-d2 / (2 * l.radius * l.radius));
-						if (falloff < 0.002) continue;
-
-						const r0 = ((1 - ior) / (1 + ior)) ** 2;
-						const ct = Math.max(0.01, 1 - Math.sqrt(d2) * 0.6);
-						const fresnel = r0 + (1 - r0) * (1 - ct) ** 5;
-
-						intensity += falloff * (1 - fresnel) * transmission * SPECTRA[l.si][wi];
-					}
-
-					if (ior > 1.7) {
-						const phase = Math.sin(s * 0.5 + col * 0.8 * (ior - 1.3) + row * 1.1)
-							* Math.sin(s * 0.3 - col * 0.35 + row * 0.6 * (ior - 1.3));
-						if (phase > 0.2) {
-							intensity += (ior - 1.5) * (phase - 0.2) * transmission * 0.4;
-						}
-					}
-
-					totalX += intensity * wx;
-					totalY += intensity * wy;
-					totalZ += intensity * wz;
-				}
-
-				const scale = 65;
-				let [lr, lg, lb] = xyzToRGB(totalX * scale, totalY * scale, totalZ * scale);
-
-				let r = px.baseR + lr;
-				let g = px.baseG + lg;
-				let b = px.baseB + lb;
-
-				r = Math.min(255, Math.max(0, r)) | 0;
-				g = Math.min(255, Math.max(0, g)) | 0;
-				b = Math.min(255, Math.max(0, b)) | 0;
-
-				// scatter/dim near text lines
 				let minDist = HALO + 1;
 				for (let ri = 0; ri < textRects.length; ri++) {
 					const tr = textRects[ri];
@@ -270,22 +482,39 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 					if (d < minDist) minDist = d;
 				}
 				if (minDist < HALO) {
-					const p = 1.0 - minDist / HALO; // 1 at text, 0 at edge
-					// each pixel has a unique "sensitivity" — some go dark early, some resist
+					const p = 1.0 - minDist / HALO;
 					const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
-					const sensitivity = 0.3 + noise * 0.7; // range [0.3, 1.0]
-					// smooth continuous dim: low-sensitivity pixels darken aggressively near text
+					const sensitivity = 0.3 + noise * 0.7;
 					const dim = Math.max(0, 1.0 - (p * p) / (sensitivity * sensitivity));
-					r = (r * dim) | 0;
-					g = (g * dim) | 0;
-					b = (b * dim) | 0;
+					haloData[row * cols + col] = Math.min(haloData[row * cols + col], (dim * 255) | 0);
 				}
-
-				ctx.fillStyle = `rgb(${r},${g},${b})`;
-				ctx.fillRect(col * PX, row * PX, PX, PX);
 			}
 		}
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_2D, haloTex);
+		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, cols, rows, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, haloData);
+	}
 
+	function resize() {
+		const dpr = window.devicePixelRatio || 1;
+		canvas.width = Math.round(window.innerWidth * dpr);
+		canvas.height = Math.round(window.innerHeight * dpr);
+		cols = Math.ceil(window.innerWidth / PX);
+		rows = Math.ceil(window.innerHeight / PX);
+		haloData = new Uint8Array(cols * rows);
+		gl.viewport(0, 0, canvas.width, canvas.height);
+	}
+
+	function draw(t: number) {
+		if (cols === 0 || rows === 0) { animId = requestAnimationFrame(draw); return; }
+		const textRects = updateTextRects();
+		buildHaloTexture(textRects);
+		gl.uniform1f(uTime, t);
+		gl.uniform2f(uRes, canvas.width, canvas.height);
+		gl.uniform1f(uPx, PX * (window.devicePixelRatio || 1));
+		gl.uniform2f(uGridSize, cols, rows);
+		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 		animId = requestAnimationFrame(draw);
 	}
 

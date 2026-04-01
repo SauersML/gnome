@@ -350,6 +350,27 @@ html, body {
 	to { opacity: 1; }
 }
 
+/* ---- Typing indicator ---- */
+.typing-indicator {
+	font-size: 0.78em;
+	color: var(--sage);
+	padding: 2px 0;
+	text-shadow: 0 0 8px rgba(10, 20, 12, 0.9);
+	animation: typing-pulse 2s ease-in-out infinite;
+}
+
+@keyframes typing-pulse {
+	0%, 100% { opacity: 0.5; }
+	50% { opacity: 1; }
+}
+
+
+/* ---- Visitor count ---- */
+.visitor-count {
+	margin-right: 6px;
+	color: var(--sage);
+}
+
 /* ---- Sidebar ---- */
 .sidebar {
 	flex: 1;

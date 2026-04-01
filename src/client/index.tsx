@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { nanoid } from "nanoid";
 import { type ChatMessage, type Message, type Page } from "../shared";
 import { initPixelCanvas } from "./pixels";
+import DOMPurify from "dompurify";
 
 declare const katex: { renderToString: (tex: string, opts?: Record<string, unknown>) => string };
 
@@ -57,6 +58,15 @@ function PixelBackground() {
 	return <canvas ref={canvasRef} className="pixel-bg" />;
 }
 
+const PURIFY_CONFIG = {
+	ALLOWED_TAGS: ["p", "div", "span", "em", "strong", "b", "i", "br", "ul", "ol", "li", "h1", "h2", "h3", "h4", "a", "code", "pre", "blockquote", "sub", "sup", "hr", "table", "thead", "tbody", "tr", "th", "td"],
+	ALLOWED_ATTR: ["class", "href", "target", "rel"],
+};
+
+function sanitize(html: string): string {
+	return DOMPurify.sanitize(html, PURIFY_CONFIG);
+}
+
 function renderKatex(container: HTMLElement) {
 	container.querySelectorAll("span.k, span.kb").forEach((el) => {
 		const tex = el.textContent || "";
@@ -79,8 +89,8 @@ function ArticlePage({ page, onBack }: { page: Page; onBack: () => void }) {
 		<div className="article-page">
 			<button className="article-back" onClick={onBack}>&larr; back</button>
 			<h1 className="article-title">{page.title}</h1>
-			<p className="article-abstract" ref={abstractRef} dangerouslySetInnerHTML={{ __html: page.abstract }} />
-			<div className="article-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: page.body }} />
+			<p className="article-abstract" ref={abstractRef} dangerouslySetInnerHTML={{ __html: sanitize(page.abstract) }} />
+			<div className="article-body" ref={bodyRef} dangerouslySetInnerHTML={{ __html: sanitize(page.body) }} />
 		</div>
 	);
 }
@@ -92,7 +102,10 @@ function App() {
 	const [activePage, setActivePage] = useState<Page | null>(null);
 	const [mobileTab, setMobileTab] = useState<"chat" | "pages">("chat");
 	const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+	const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
+	const [visitorCount, setVisitorCount] = useState(0);
 	const messagesEnd = useRef<HTMLDivElement>(null);
+	const typingTimeout = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 	const initialLoad = useRef(true);
 	const applyCss = useKimiCss();
 
@@ -110,7 +123,21 @@ function App() {
 		room: "global",
 		onMessage: (evt) => {
 			const message = JSON.parse(evt.data as string) as Message;
-			if (message.type === "css") {
+			if (message.type === "presence") {
+				setVisitorCount(message.count);
+			} else if (message.type === "typing") {
+				if (message.user === name) return;
+				if (message.isTyping) {
+					setTypingUsers((prev) => new Set(prev).add(message.user));
+					clearTimeout(typingTimeout.current[message.user]);
+					typingTimeout.current[message.user] = setTimeout(() => {
+						setTypingUsers((prev) => { const s = new Set(prev); s.delete(message.user); return s; });
+					}, 5000);
+				} else {
+					clearTimeout(typingTimeout.current[message.user]);
+					setTypingUsers((prev) => { const s = new Set(prev); s.delete(message.user); return s; });
+				}
+			} else if (message.type === "css") {
 				applyCss(message.css);
 			} else if (message.type === "pages") {
 				setPages(message.pages);
@@ -121,7 +148,7 @@ function App() {
 					if (!exists) return [...prev, p];
 					return prev.map((x) => (x.slug === p.slug ? p : x));
 				});
-				setActivePage((prev) => prev?.slug === p.slug ? p : prev);
+				setActivePage(p);
 			} else if (message.type === "add") {
 				const msg: ChatMessage = { id: message.id, content: message.content, user: message.user, role: message.role };
 				setMessages((prev) => {
@@ -134,6 +161,10 @@ function App() {
 				setMessages((prev) =>
 					prev.map((m) => (m.id === msg.id ? msg : m)),
 				);
+				if (msg.role === "assistant") {
+					setActivePage(null);
+					setMobileTab("chat");
+				}
 			} else {
 				// merge server history with local state to avoid dropping optimistic messages
 				setMessages((prev) => {
@@ -145,6 +176,8 @@ function App() {
 		},
 	});
 
+	const lastTypingSent = useRef(0);
+
 	if (activePage) {
 		return (
 			<>
@@ -152,6 +185,13 @@ function App() {
 				<ArticlePage page={activePage} onBack={() => setActivePage(null)} />
 			</>
 		);
+	}
+	function sendTyping() {
+		if (!name) return;
+		const now = Date.now();
+		if (now - lastTypingSent.current < 2000) return;
+		lastTypingSent.current = now;
+		socket.send(JSON.stringify({ type: "typing", user: name, isTyping: true }));
 	}
 
 	function sendMessage(content: string, userName: string) {
@@ -162,6 +202,7 @@ function App() {
 			role: "user",
 		};
 		setMessages((prev) => [...prev, chatMessage]);
+		socket.send(JSON.stringify({ type: "typing", user: userName, isTyping: false }));
 		socket.send(
 			JSON.stringify({
 				type: "add",
@@ -179,7 +220,7 @@ function App() {
 						<div className="brand">
 							gnome<span className="dot">.</span>science
 						</div>
-						<div className="header-right">Live</div>
+						<div className="header-right">{visitorCount > 0 && <span className="visitor-count">{visitorCount}</span>}Live</div>
 					</header>
 
 
@@ -202,6 +243,15 @@ function App() {
 						</div>
 					)}
 
+					{typingUsers.size > 0 && (() => {
+					const users = [...typingUsers];
+					const hasKimi = typingUsers.has("Kimi K2.5");
+					const humans = users.filter((u) => u !== "Kimi K2.5");
+					const parts: string[] = [];
+					if (humans.length > 0) parts.push(`${humans.join(", ")} ${humans.length === 1 ? "is typing" : "are typing"}`);
+					if (hasKimi) parts.push("Kimi K2.5 is responding");
+					return <div className="typing-indicator">{parts.join(" · ")}...</div>;
+				})()}
 					<div className="compose">
 						<form
 							className="compose-form"
@@ -233,6 +283,7 @@ function App() {
 								className="compose-input"
 								placeholder={pendingMessage && !name ? "Enter your name..." : "Write something..."}
 								autoComplete="off"
+								onInput={sendTyping}
 							/>
 							<button type="submit" className="compose-send">{pendingMessage && !name ? "Join" : "Send"}</button>
 						</form>
