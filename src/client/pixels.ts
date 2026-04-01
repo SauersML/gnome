@@ -100,90 +100,34 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	let cols = 0;
 	let rows = 0;
 
-	// Two offscreen canvases: one for sharp text, one for blurred halo
-	const glyphCanvas = document.createElement("canvas");
-	const gctx = glyphCanvas.getContext("2d")!;
-	const blurCanvas = document.createElement("canvas");
-	const bctx = blurCanvas.getContext("2d", { willReadFrequently: true })!;
-	let mask: Uint8Array = new Uint8Array(0);
-	let maskW = 0;
-	let maskH = 0;
-	let lastFw = 0;
-	let lastFh = 0;
+	// Collect text node rects every frame (fast — just DOM queries, no canvas)
+	type Rect = { c0: number; r0: number; c1: number; r1: number };
+	let textRects: Rect[] = [];
 
-	function buildTextMask() {
-		maskW = cols;
-		maskH = rows;
-		if (maskW === 0 || maskH === 0) return;
-
-		const fw = maskW * PX;
-		const fh = maskH * PX;
-
-		// only resize canvases when dimensions change
-		if (fw !== lastFw || fh !== lastFh) {
-			glyphCanvas.width = fw;
-			glyphCanvas.height = fh;
-			blurCanvas.width = fw;
-			blurCanvas.height = fh;
-			lastFw = fw;
-			lastFh = fh;
-		}
-
-		// render text glyphs in white
-		gctx.clearRect(0, 0, fw, fh);
-		gctx.fillStyle = "#fff";
-
+	function updateTextRects() {
 		const root = document.getElementById("root");
-		if (!root) return;
+		if (!root) { textRects = []; return; }
+		const rects: Rect[] = [];
 		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 		const range = document.createRange();
 		let node: Text | null;
 		while ((node = walker.nextNode() as Text | null)) {
-			const text = node.textContent;
-			if (!text || !text.trim()) continue;
-			const parent = node.parentElement;
-			if (!parent) continue;
-			const style = getComputedStyle(parent);
-			gctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-			// render per text node line (fast), not per character
+			if (!node.textContent || !node.textContent.trim()) continue;
 			range.selectNodeContents(node);
-			const rects = range.getClientRects();
-			for (let i = 0; i < rects.length; i++) {
-				const rc = rects[i];
-				const baseline = rc.bottom - rc.height * 0.18;
-				gctx.fillText(text, rc.left, baseline, rc.width);
+			const crs = range.getClientRects();
+			for (let i = 0; i < crs.length; i++) {
+				const r = crs[i];
+				if (r.width < 1 || r.height < 1) continue;
+				rects.push({ c0: r.left / PX, r0: r.top / PX, c1: r.right / PX, r1: r.bottom / PX });
 			}
 		}
-
-		// input values/placeholders
 		const inputs = root.querySelectorAll("input") as NodeListOf<HTMLInputElement>;
 		for (let i = 0; i < inputs.length; i++) {
-			const inp = inputs[i];
-			const text = inp.value || inp.placeholder;
-			if (!text) continue;
-			const rc = inp.getBoundingClientRect();
-			const style = getComputedStyle(inp);
-			gctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-			gctx.fillText(text, rc.left, rc.bottom - rc.height * 0.18, rc.width);
+			const r = inputs[i].getBoundingClientRect();
+			if (r.width < 1 || r.height < 1) continue;
+			rects.push({ c0: r.left / PX, r0: r.top / PX, c1: r.right / PX, r1: r.bottom / PX });
 		}
-
-		// blur to create halo (GPU-accelerated)
-		bctx.clearRect(0, 0, fw, fh);
-		bctx.filter = `blur(${PX}px)`;
-		bctx.drawImage(glyphCanvas, 0, 0);
-		bctx.filter = "none";
-
-		// sample blurred result at grid resolution
-		const imgData = bctx.getImageData(0, 0, fw, fh).data;
-		mask = new Uint8Array(maskW * maskH);
-		const halfPX = PX >> 1;
-		for (let gy = 0; gy < maskH; gy++) {
-			const py = gy * PX + halfPX;
-			for (let gx = 0; gx < maskW; gx++) {
-				const px = gx * PX + halfPX;
-				mask[gy * maskW + gx] = imgData[(py * fw + px) * 4]; // R channel
-			}
-		}
+		textRects = rects;
 	}
 
 	function build() {
@@ -221,8 +165,7 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		const h = canvas.height;
 		const s = t / 1000;
 
-		// rebuild glyph mask every frame so scrolling/text changes are smooth
-		buildTextMask();
+		updateTextRects();
 
 		// 4 lights at different color temperatures, sweeping wide orbits
 		const lights = [
@@ -317,22 +260,27 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				g = Math.min(255, Math.max(0, g)) | 0;
 				b = Math.min(255, Math.max(0, b)) | 0;
 
-				// darken near text glyphs using mask
-				if (mask.length > 0 && col < maskW && row < maskH) {
-					const proximity = mask[row * maskW + col]; // 0-255, 255 = on glyph
-					if (proximity > 0) {
-						const p = proximity / 255; // 0-1
-						const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
-						if (noise < p * p) {
-							// some pixels go full black (more likely near glyphs)
-							r = 0; g = 0; b = 0;
-						} else {
-							// rest get dimmed proportionally — closer = darker
-							const dim = 1.0 - p * 0.7;
-							r = (r * dim) | 0;
-							g = (g * dim) | 0;
-							b = (b * dim) | 0;
-						}
+				// scatter/dim near text lines
+				let minDist = HALO + 1;
+				for (let ri = 0; ri < textRects.length; ri++) {
+					const tr = textRects[ri];
+					const dx = Math.max(tr.c0 - col, 0, col - tr.c1);
+					const dy = Math.max(tr.r0 - row, 0, row - tr.r1);
+					const d = Math.sqrt(dx * dx + dy * dy);
+					if (d < minDist) minDist = d;
+				}
+				if (minDist < HALO) {
+					const p = 1.0 - minDist / HALO; // 1 at text, 0 at edge
+					const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
+					if (noise < p * p * 0.6) {
+						// some go black — more likely close to text
+						r = 0; g = 0; b = 0;
+					} else {
+						// rest dimmed gently
+						const dim = 1.0 - p * 0.45;
+						r = (r * dim) | 0;
+						g = (g * dim) | 0;
+						b = (b * dim) | 0;
 					}
 				}
 
