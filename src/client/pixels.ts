@@ -7,7 +7,6 @@ function hash(x: number, y: number, seed: number = 0): number {
 	return h;
 }
 
-// ---- Spectral rendering ----
 const WAVELENGTHS = [420, 460, 500, 530, 560, 590, 630, 670];
 
 function wavelengthToXYZ(nm: number): [number, number, number] {
@@ -29,73 +28,78 @@ function wavelengthToXYZ(nm: number): [number, number, number] {
 }
 
 function xyzToRGB(x: number, y: number, z: number): [number, number, number] {
-	const r = 3.2406 * x - 1.5372 * y - 0.4986 * z;
-	const g = -0.9689 * x + 1.8758 * y + 0.0415 * z;
-	const b = 0.0557 * x - 0.2040 * y + 1.0570 * z;
-	return [r, g, b];
+	return [
+		3.2406 * x - 1.5372 * y - 0.4986 * z,
+		-0.9689 * x + 1.8758 * y + 0.0415 * z,
+		0.0557 * x - 0.2040 * y + 1.0570 * z,
+	];
 }
 
 const WAVE_XYZ = WAVELENGTHS.map(wavelengthToXYZ);
 
-interface Material {
-	cauchyA: number;
-	cauchyB: number;
-	absCenter: number;
+interface PixelProps {
+	ior: number;
+	dispersion: number;
+	baseAbsCenter: number;
 	absWidth: number;
 	absStrength: number;
 	thickness: number;
+	// unique phase offsets per pixel for complex motion
+	p1: number;
+	p2: number;
+	p3: number;
 	baseR: number;
 	baseG: number;
 	baseB: number;
 }
 
-function randomMaterial(col: number, row: number): Material {
+function makePixel(col: number, row: number): PixelProps {
 	const h1 = hash(col, row);
 	const h2 = hash(col, row, 33);
 	const h3 = hash(col, row, 66);
 	const h4 = hash(col, row, 99);
+	const h5 = hash(col, row, 150);
 
 	const typeRoll = (Math.abs(h1) % 1000) / 1000;
-	let cauchyA: number;
-	if (typeRoll < 0.04) cauchyA = 2.0 + typeRoll * 5;
-	else if (typeRoll < 0.15) cauchyA = 1.65 + typeRoll * 2;
-	else cauchyA = 1.3 + typeRoll * 0.35;
+	let ior: number;
+	if (typeRoll < 0.05) ior = 1.9 + typeRoll * 3;
+	else if (typeRoll < 0.2) ior = 1.55 + typeRoll;
+	else ior = 1.3 + typeRoll * 0.3;
 
-	const cauchyB = 3000 + (Math.abs(h2) % 12000);
+	const dispersion = 3000 + (Math.abs(h2) % 10000);
+	const absCenter = 480 + (Math.abs(h3) % 200);
+	const absWidth = 35 + (Math.abs(h3 >> 10) % 50);
+	const absStrength = 1.8 + (Math.abs(h4) % 250) / 100;
+	const thickness = 0.5 + (Math.abs(hash(col, row, 111)) % 100) / 100 * 0.9;
 
-	const absCenter = 420 + (Math.abs(h3) % 280);
-	const absWidth = 40 + (Math.abs(h3 >> 10) % 60);
-	const biasedCenter = absCenter * 0.45 + 620 * 0.55;
-	const absStrength = 2.2 + (Math.abs(h4) % 300) / 100;
+	const p1 = (Math.abs(h5) % 6283) / 1000;
+	const p2 = (Math.abs(hash(col, row, 200)) % 6283) / 1000;
+	const p3 = (Math.abs(hash(col, row, 250)) % 6283) / 1000;
 
-	const thickness = 0.6 + (Math.abs(hash(col, row, 111)) % 100) / 100 * 0.8;
-
-	const palIdx = Math.abs(h1 >> 4) % 6;
+	const palIdx = Math.abs(h1 >> 4) % 5;
 	const bases: [number, number, number][] = [
-		[5, 16, 8], [6, 20, 10], [4, 14, 14],
-		[8, 18, 6], [5, 18, 12], [7, 22, 9],
+		[4, 12, 6], [5, 15, 8], [3, 10, 10],
+		[6, 14, 5], [4, 13, 9],
 	];
 	const [baseR, baseG, baseB] = bases[palIdx];
-	const v = ((h1 >> 8) % 6) - 3;
+	const v = ((h1 >> 8) % 4) - 2;
 
 	return {
-		cauchyA, cauchyB,
-		absCenter: biasedCenter, absWidth, absStrength, thickness,
+		ior, dispersion, baseAbsCenter: absCenter, absWidth, absStrength, thickness,
+		p1, p2, p3,
 		baseR: baseR + v, baseG: baseG + v, baseB: baseB + v,
 	};
 }
 
-// How many pixels of stochastic falloff at region edges
-const FRINGE = 4; // in grid cells
+const FRINGE = 7;
 
 export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	const ctx = canvas.getContext("2d")!;
 	let animId: number;
-	let materials: Material[][] = [];
+	let pixels: PixelProps[][] = [];
 	let cols = 0;
 	let rows = 0;
 
-	// Query individual text elements and return their bounds in grid-cell coords
 	const TEXT_SELECTORS = [
 		".brand", ".header-right",
 		".msg-who", ".msg-body",
@@ -114,46 +118,40 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 			const rect = els[i].getBoundingClientRect();
 			if (rect.width === 0 || rect.height === 0) continue;
 			regions.push({
-				c0: rect.left / PX,
-				r0: rect.top / PX,
-				c1: rect.right / PX,
-				r1: rect.bottom / PX,
+				c0: rect.left / PX, r0: rect.top / PX,
+				c1: rect.right / PX, r1: rect.bottom / PX,
 			});
 		}
 		return regions;
 	}
 
-	function buildMaterials() {
+	function build() {
 		cols = Math.ceil(canvas.width / PX);
 		rows = Math.ceil(canvas.height / PX);
-		materials = [];
+		pixels = [];
 		for (let row = 0; row < rows; row++) {
-			const matRow: Material[] = [];
-			for (let col = 0; col < cols; col++) {
-				matRow.push(randomMaterial(col, row));
-			}
-			materials.push(matRow);
+			const r: PixelProps[] = [];
+			for (let col = 0; col < cols; col++) r.push(makePixel(col, row));
+			pixels.push(r);
 		}
 	}
 
 	function resize() {
 		canvas.width = window.innerWidth;
 		canvas.height = window.innerHeight;
-		buildMaterials();
+		build();
 	}
 
-	// precompute blackbody spectra for fixed temps
 	function spectralPower(nm: number, tempK: number): number {
 		const lambda = nm * 1e-9;
-		const c2 = 1.4388e-2;
-		return 1.0 / (Math.pow(lambda, 5) * (Math.exp(c2 / (lambda * tempK)) - 1));
+		return 1.0 / (Math.pow(lambda, 5) * (Math.exp(1.4388e-2 / (lambda * tempK)) - 1));
 	}
 
-	const TEMPS = [3500, 5000, 6500];
-	const PRECOMP_SPECTRA = TEMPS.map((temp) => {
-		const spectrum = WAVELENGTHS.map((nm) => spectralPower(nm, temp));
-		const maxS = Math.max(...spectrum);
-		return spectrum.map((s) => s / maxS);
+	const TEMPS = [3000, 4200, 5500, 7000, 9000];
+	const SPECTRA = TEMPS.map((temp) => {
+		const sp = WAVELENGTHS.map((nm) => spectralPower(nm, temp));
+		const mx = Math.max(...sp);
+		return sp.map((s) => s / mx);
 	});
 
 	function draw(t: number) {
@@ -162,34 +160,44 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		const h = canvas.height;
 		const s = t / 1000;
 
-		// two big sweeping lights — large visible movement
+		// 4 lights at different color temperatures, sweeping wide orbits
 		const lights = [
-			{
-				x: 0.5 + 0.6 * Math.sin(s * 0.25),
-				y: 0.5 + 0.5 * Math.cos(s * 0.18),
-				power: 0.7,
-				spectrum: 1,
-				radius: 0.55,
-			},
-			{
-				x: 0.5 + 0.6 * Math.cos(s * 0.2),
-				y: 0.5 + 0.5 * Math.sin(s * 0.3),
-				power: 0.55,
-				spectrum: 0,
-				radius: 0.5,
-			},
+			{ x: 0.5 + 0.5 * Math.sin(s * 0.22), y: 0.5 + 0.4 * Math.cos(s * 0.17), power: 0.55, si: 1, radius: 0.6 },
+			{ x: 0.5 + 0.45 * Math.cos(s * 0.19), y: 0.5 + 0.45 * Math.sin(s * 0.26), power: 0.45, si: 3, radius: 0.55 },
+			{ x: 0.5 + 0.4 * Math.sin(s * 0.31), y: 0.5 + 0.35 * Math.cos(s * 0.24), power: 0.35, si: 0, radius: 0.45 },
+			{ x: 0.5 + 0.35 * Math.cos(s * 0.28), y: 0.5 + 0.4 * Math.sin(s * 0.35), power: 0.3, si: 4, radius: 0.45 },
 		];
 
-		ctx.fillStyle = "#050c07";
+		// 3 large-scale hue waves: rotating direction vectors sweep color bands across screen
+		const w1a = s * 0.15, w1dx = Math.cos(w1a), w1dy = Math.sin(w1a);
+		const w2a = s * 0.11 + 2.0, w2dx = Math.cos(w2a), w2dy = Math.sin(w2a);
+		const w3a = s * 0.08 + 4.5, w3dx = Math.cos(w3a), w3dy = Math.sin(w3a);
+
+		ctx.fillStyle = "#040a05";
 		ctx.fillRect(0, 0, w, h);
 
 		const regions = getTextRegions();
 
 		for (let row = 0; row < rows; row++) {
 			for (let col = 0; col < cols; col++) {
-				const mat = materials[row][col];
+				const px = pixels[row][col];
 				const nx = col / cols;
 				const ny = row / rows;
+
+				// --- Complex hue modulation ---
+				// Large spatial waves rotate over time, creating sweeping color bands
+				const sw1 = Math.sin((nx * w1dx + ny * w1dy) * 8.0 + s * 0.3);
+				const sw2 = Math.sin((nx * w2dx + ny * w2dy) * 6.0 + s * 0.25);
+				const sw3 = Math.sin((nx * w3dx + ny * w3dy) * 10.0 + s * 0.2);
+
+				// Per-pixel phase creates fine detail; spatial waves create large patterns
+				const absShift =
+					30 * Math.sin(s * 0.18 + px.p1 + nx * 4 + ny * 3) * (0.6 + 0.4 * sw1)
+					+ 20 * Math.sin(s * 0.25 + px.p2 + nx * 2.5 - ny * 3.5) * (0.5 + 0.5 * sw2)
+					+ 15 * Math.sin(s * 0.35 + px.p3 - nx * 3 + ny * 2) * (0.5 + 0.5 * sw3);
+
+				const absCenter = px.baseAbsCenter + absShift;
+				const thickMod = px.thickness * (0.85 + 0.15 * Math.sin(s * 0.12 + px.p2 + sw1 * 0.5));
 
 				let totalX = 0;
 				let totalY = 0;
@@ -199,78 +207,80 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 					const nm = WAVELENGTHS[wi];
 					const [wx, wy, wz] = WAVE_XYZ[wi];
 
-					const ior = mat.cauchyA + mat.cauchyB / (nm * nm);
+					const ior = px.ior + px.dispersion / (nm * nm);
 
-					const absDelta = (nm - mat.absCenter) / mat.absWidth;
-					const alpha = mat.absStrength * Math.exp(-0.5 * absDelta * absDelta);
-					const transmission = Math.exp(-alpha * mat.thickness);
+					const absDelta = (nm - absCenter) / px.absWidth;
+					const alpha = px.absStrength * Math.exp(-0.5 * absDelta * absDelta);
+					const transmission = Math.exp(-alpha * thickMod);
 
-					let spectralIntensity = 0;
+					let intensity = 0;
 
 					for (let li = 0; li < lights.length; li++) {
-						const light = lights[li];
-						const dx = nx - light.x;
-						const dy = ny - light.y;
-						const dist2 = dx * dx + dy * dy;
+						const l = lights[li];
+						const dx = nx - l.x;
+						const dy = ny - l.y;
+						const d2 = dx * dx + dy * dy;
 
-						const sigma = light.radius;
-						const falloff = light.power * Math.exp(-dist2 / (2 * sigma * sigma));
+						const falloff = l.power * Math.exp(-d2 / (2 * l.radius * l.radius));
 						if (falloff < 0.002) continue;
 
 						const r0 = ((1 - ior) / (1 + ior)) ** 2;
-						const cosTheta = Math.max(0.01, 1 - Math.sqrt(dist2) * 0.8);
-						const fresnel = r0 + (1 - r0) * (1 - cosTheta) ** 5;
-						const admitted = 1 - fresnel;
+						const ct = Math.max(0.01, 1 - Math.sqrt(d2) * 0.6);
+						const fresnel = r0 + (1 - r0) * (1 - ct) ** 5;
 
-						const power = PRECOMP_SPECTRA[light.spectrum][wi];
-
-						spectralIntensity += falloff * admitted * transmission * power;
+						intensity += falloff * (1 - fresnel) * transmission * SPECTRA[l.si][wi];
 					}
 
 					if (ior > 1.7) {
-						const phase = Math.sin(s * 0.6 + col * 0.9 * (ior - 1.3) + row * 1.2)
-							* Math.sin(s * 0.35 - col * 0.4 + row * 0.7 * (ior - 1.3));
-						if (phase > 0.25) {
-							spectralIntensity += (ior - 1.5) * (phase - 0.25) * transmission * 0.5;
+						const phase = Math.sin(s * 0.5 + col * 0.8 * (ior - 1.3) + row * 1.1)
+							* Math.sin(s * 0.3 - col * 0.35 + row * 0.6 * (ior - 1.3));
+						if (phase > 0.2) {
+							intensity += (ior - 1.5) * (phase - 0.2) * transmission * 0.4;
 						}
 					}
 
-					totalX += spectralIntensity * wx;
-					totalY += spectralIntensity * wy;
-					totalZ += spectralIntensity * wz;
+					totalX += intensity * wx;
+					totalY += intensity * wy;
+					totalZ += intensity * wz;
 				}
 
-				const scale = 55;
+				const scale = 65;
 				let [lr, lg, lb] = xyzToRGB(totalX * scale, totalY * scale, totalZ * scale);
 
-				let r = mat.baseR + lr;
-				let g = mat.baseG + lg;
-				let b = mat.baseB + lb;
+				let r = px.baseR + lr;
+				let g = px.baseG + lg;
+				let b = px.baseB + lb;
 
 				r = Math.min(255, Math.max(0, r)) | 0;
 				g = Math.min(255, Math.max(0, g)) | 0;
 				b = Math.min(255, Math.max(0, b)) | 0;
 
-				// darken pixels under text regions with stochastic fringe
+				// darken under text regions with organic falloff
 				let darken = 1.0;
 				for (let ri = 0; ri < regions.length; ri++) {
 					const reg = regions[ri];
-					// signed distance inward from each edge (positive = inside)
-					const dLeft = col - reg.c0;
-					const dRight = reg.c1 - col;
-					const dTop = row - reg.r0;
-					const dBottom = reg.r1 - row;
-					const dMin = Math.min(dLeft, dRight, dTop, dBottom);
+					const dMin = Math.min(col - reg.c0, reg.c1 - col, row - reg.r0, reg.r1 - row);
 
 					if (dMin > FRINGE) {
 						// fully inside
-						darken = Math.min(darken, 0.18);
+						darken = Math.min(darken, 0.12);
 					} else if (dMin > -FRINGE) {
-						// in the fringe zone: probability of darkening based on depth
+						// fringe zone: smooth ramp + noise for organic edge
 						const t = (dMin + FRINGE) / (2 * FRINGE); // 0 at outer edge, 1 at inner
-						const noise = (Math.abs(hash(col, row, 777 + ri)) % 1000) / 1000;
-						if (noise < t) {
-							darken = Math.min(darken, 0.18);
+
+						// multi-octave noise for irregular boundary
+						const n1 = (Math.abs(hash(col, row, 777 + ri)) % 1000) / 1000;
+						const n2 = (Math.abs(hash(col * 3 + 7, row * 3 + 13, 999 + ri)) % 1000) / 1000;
+						const noise = n1 * 0.6 + n2 * 0.4; // blend two noise scales
+
+						// shift the threshold by noise so the boundary wobbles
+						const threshold = t * 1.4 - noise * 0.4;
+
+						if (threshold > 0) {
+							// gradual darkening: ramp from 1.0 down to 0.12
+							const strength = Math.min(1.0, threshold);
+							const d = 1.0 - strength * 0.88; // 1.0 -> 0.12
+							darken = Math.min(darken, d);
 						}
 					}
 				}
@@ -289,7 +299,6 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 
 	resize();
 	animId = requestAnimationFrame(draw);
-
 	window.addEventListener("resize", resize);
 
 	return () => {
