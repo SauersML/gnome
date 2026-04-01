@@ -171,7 +171,12 @@ function App() {
 					prev.map((m) => (m.id === msg.id ? msg : m)),
 				);
 			} else {
-				setMessages(message.messages);
+				// merge server history with local state to avoid dropping optimistic messages
+				setMessages((prev) => {
+					const serverIds = new Set(message.messages.map((m: ChatMessage) => m.id));
+					const localOnly = prev.filter((m) => !serverIds.has(m.id));
+					return [...message.messages, ...localOnly];
+				});
 			}
 		},
 	});
