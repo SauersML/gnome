@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Gnome cap / pointed hat -->
+  <!-- Main cone -->
+  <path d="M12 58 L32 4 L52 58 Z" fill="#cc2222"/>
+  <!-- Hat band -->
+  <rect x="10" y="52" width="44" height="8" rx="4" fill="#cc2222"/>
+  <!-- Subtle fold/highlight -->
+  <path d="M32 4 L22 40 L32 36 Z" fill="#dd4444" opacity="0.5"/>
+</svg>

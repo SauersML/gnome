@@ -5,6 +5,13 @@ export type ChatMessage = {
 	role: "user" | "assistant";
 };
 
+export type Page = {
+	slug: string;
+	title: string;
+	abstract: string;
+	body: string;
+};
+
 export type Message =
 	| {
 			type: "add";
@@ -27,4 +34,12 @@ export type Message =
 	| {
 			type: "css";
 			css: string;
+	  }
+	| {
+			type: "pages";
+			pages: Page[];
+	  }
+	| {
+			type: "page-update";
+			page: Page;
 	  };
