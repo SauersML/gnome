@@ -248,13 +248,22 @@ function sanitizeCss(css: string): string {
 		.replace(/javascript\s*:/gi, "/* blocked */");
 }
 
-function buildContext(messages: ChatMessage[], customCss: string, pages: Page[]): string {
-	const recentIds = messages.slice(-30).map((m) => `  ${m.id} (${m.user}): ${m.content}`).join("\n");
-	const currentCssSnippet = customCss ? `\n\nCustom CSS currently applied:\n${customCss}` : "\n\nNo custom CSS is currently applied.";
+function buildSystemPrompt(customCss: string, pages: Page[]): string {
+	const cssSnippet = customCss ? `\nCustom CSS currently applied:\n${customCss}` : "\nNo custom CSS applied.";
 	const pagesSnippet = pages.length > 0
-		? `\n\nCurrent Pages in the sidebar:\n${pages.map((p) => `  slug="${p.slug}" title="${p.title}" abstract="${p.abstract}"`).join("\n")}`
-		: "\n\nNo pages yet.";
-	return `You're chatting in a live room at gnome.science. Here are the recent messages:\n${recentIds}\n\nPage HTML structure:\n${PAGE_STRUCTURE}\n\nBase CSS (always loaded):\n${BASE_CSS}${currentCssSnippet}${pagesSnippet}\n\nYour custom CSS gets injected into a <style> tag in <head>, so it overrides the base styles above.\n\nYou have a few tools you can use by including fenced code blocks in your response. Totally optional — feel free to just chat.\n\n\`\`\`css-add — appends new CSS rules to what's already there.\n\`\`\`css-add\n.msg-body { color: red; }\n\`\`\`\n\n\`\`\`css-edit — tweaks existing custom CSS. Put the old snippet above a --- line and the replacement below.\n\`\`\`css-edit\n.msg-body { color: red; }\n---\n.msg-body { color: blue; }\n\`\`\`\n\n\`\`\`css-reset — wipes all custom CSS back to defaults.\n\`\`\`css-reset\n\`\`\`\n\n\`\`\`edit id=<message_id> — rewrites a message.\n\`\`\`edit id=abc123\nNew content\n\`\`\`\n\n\`\`\`clear-messages — wipes all chat messages.\n\`\`\`clear-messages\n\`\`\`\n\n\`\`\`page-add — creates a new page in the sidebar. Body is HTML. For math, use <span class="k">LaTeX</span> for inline or <span class="kb">LaTeX</span> for display math (rendered by KaTeX on the client).\n\`\`\`page-add\nslug: my-page\ntitle: My Page Title\nabstract: A short description\n---\n<p>Consider <span class="k">f(x) = x^2</span>. Then</p>\n<div class="tex-block"><span class="kb">\\\\int_0^1 f(x)\\\\,dx = \\\\frac{1}{3}</span></div>\n\`\`\`\n\n\`\`\`page-edit slug=<slug> — edits an existing page. Include only the fields you want to change. If changing body, put it below ---.\n\`\`\`page-edit slug=my-page\ntitle: Updated Title\nabstract: Updated description\n---\n<p>New body HTML</p>\n\`\`\`\n\nPlease use css-add or css-edit instead of plain css blocks so the tools work correctly.`;
+		? `\nPages in sidebar:\n${pages.map((p) => `  slug="${p.slug}" title="${p.title}" abstract="${p.abstract}"\n  body: ${p.body.slice(0, 300)}${p.body.length > 300 ? "..." : ""}`).join("\n")}`
+		: "\nNo pages yet.";
+	return `You are Kimi K2.5, chatting in a live room at gnome.science. Be concise and friendly.${cssSnippet}${pagesSnippet}
+
+You have tools via fenced code blocks (optional — feel free to just chat):
+
+\`\`\`css-add — appends CSS rules.
+\`\`\`css-edit — old snippet above ---, replacement below.
+\`\`\`css-reset — wipes custom CSS.
+\`\`\`edit id=<id> — rewrites a chat message.
+\`\`\`clear-messages — wipes all messages.
+\`\`\`page-add — new sidebar page (slug/title/abstract above ---, HTML body below, use <span class="k">LaTeX</span> for math).
+\`\`\`page-edit slug=<slug> — edit existing page fields, body below ---.`;
 }
 
 export class Chat extends Server<Env> {
@@ -301,7 +310,7 @@ export class Chat extends Server<Env> {
 		);
 
 		this.messages = this.ctx.storage.sql
-			.exec(`SELECT * FROM messages`)
+			.exec(`SELECT * FROM messages ORDER BY rowid`)
 			.toArray() as ChatMessage[];
 
 		this.pages = this.ctx.storage.sql
@@ -426,23 +435,31 @@ export class Chat extends Server<Env> {
 	}
 
 	async callKimi(recentMessages: ChatMessage[]): Promise<string | null> {
-		const context = recentMessages.slice(-200).map((m) => ({
-			role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
-			content: m.role === "assistant" ? m.content : `${m.user}: ${m.content}`,
-		}));
+		const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+			{ role: "system", content: buildSystemPrompt(this.customCss, this.pages) },
+		];
 
-		const contextMsg = { role: "user" as const, content: buildContext(recentMessages, this.customCss, this.pages) };
+		// Last 30 messages as conversation context (truncate long ones)
+		for (const m of recentMessages.slice(-30)) {
+			const content = m.role === "assistant" ? m.content.slice(0, 500) : `${m.user}: ${m.content}`;
+			messages.push({
+				role: m.role === "assistant" ? "assistant" : "user",
+				content,
+			});
+		}
 
 		const ai = (this.env as any).AI;
 		if (!ai) {
 			console.error("AI binding not available");
 			return null;
 		}
-		console.log("Calling Kimi with", context.length, "messages");
+		console.log("Calling Kimi with", messages.length, "messages");
+
 		const response = await ai.run("@cf/moonshotai/kimi-k2.5", {
-			messages: [contextMsg, ...context],
+			messages,
 			max_tokens: 20480,
 		});
+
 		console.log("Kimi response type:", typeof response, "keys:", response ? Object.keys(response) : "null");
 
 		const msg = response?.choices?.[0]?.message;
@@ -493,12 +510,31 @@ export class Chat extends Server<Env> {
 				try {
 					rawResponse = await this.callKimi(this.messages);
 				} catch (e) {
-					console.error("Kimi call failed:", e instanceof Error ? e.message : e);
+					const errMsg = e instanceof Error ? e.message : String(e);
+					console.error("Kimi call failed:", errMsg);
 					this.broadcastMessage({ type: "typing", user: "Kimi K2.5", isTyping: false });
+					const errChat: ChatMessage = {
+						id: `kimi-err-${Date.now()}`,
+						content: `Something went wrong: ${errMsg.slice(0, 200)}`,
+						user: "Kimi K2.5",
+						role: "assistant",
+					};
+					this.saveMessage(errChat);
+					this.broadcastMessage({ type: "add", ...errChat });
 					return;
 				}
 				this.broadcastMessage({ type: "typing", user: "Kimi K2.5", isTyping: false });
-				if (!rawResponse) return;
+				if (!rawResponse) {
+					const nullChat: ChatMessage = {
+						id: `kimi-err-${Date.now()}`,
+						content: "I got an empty response — try again?",
+						user: "Kimi K2.5",
+						role: "assistant",
+					};
+					this.saveMessage(nullChat);
+					this.broadcastMessage({ type: "add", ...nullChat });
+					return;
+				}
 
 				const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(rawResponse);
 
