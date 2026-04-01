@@ -184,6 +184,8 @@ function App() {
 		);
 	}
 
+	const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+
 	function sendMessage(content: string, userName: string) {
 		const chatMessage: ChatMessage = {
 			id: nanoid(8),
@@ -197,46 +199,6 @@ function App() {
 				type: "add",
 				...chatMessage,
 			} satisfies Message),
-		);
-	}
-
-	if (!name) {
-		return (
-			<>
-				<PixelBackground />
-				<div className="name-overlay">
-					<div className="name-dialog">
-						<div className="brand">
-							gnome<span className="dot">.</span>science
-						</div>
-						<form
-							className="name-dialog-form"
-							onSubmit={(e) => {
-								e.preventDefault();
-								const input = e.currentTarget.elements.namedItem(
-									"name",
-								) as HTMLInputElement;
-								const trimmed = input.value.trim();
-								if (!trimmed) return;
-								localStorage.setItem("gnome_username", trimmed);
-								setName(trimmed);
-							}}
-						>
-							<label className="name-dialog-label" htmlFor="name-input">Choose a username</label>
-							<input
-								id="name-input"
-								type="text"
-								name="name"
-								className="name-dialog-input"
-								placeholder="Your name..."
-								autoComplete="off"
-								autoFocus
-							/>
-							<button type="submit" className="name-dialog-btn">Join</button>
-						</form>
-					</div>
-				</div>
-			</>
 		);
 	}
 
@@ -280,8 +242,20 @@ function App() {
 								const input = e.currentTarget.elements.namedItem(
 									"content",
 								) as HTMLInputElement;
-								if (!input.value.trim()) return;
-								sendMessage(input.value, name);
+								const val = input.value.trim();
+								if (!val) return;
+								if (pendingMessage && !name) {
+									// Second submit: this is the username
+									localStorage.setItem("gnome_username", val);
+									setName(val);
+									sendMessage(pendingMessage, val);
+									setPendingMessage(null);
+								} else if (!name) {
+									// First submit without a name: stash the message, ask for name
+									setPendingMessage(val);
+								} else {
+									sendMessage(val, name);
+								}
 								input.value = "";
 							}}
 						>
@@ -289,12 +263,12 @@ function App() {
 								type="text"
 								name="content"
 								className="compose-input"
-								placeholder="Write something..."
+								placeholder={pendingMessage && !name ? "Enter your name..." : "Write something..."}
 								autoComplete="off"
 							/>
-							<button type="submit" className="compose-send">Send</button>
+							<button type="submit" className="compose-send">{pendingMessage && !name ? "Join" : "Send"}</button>
 						</form>
-						<div className="compose-meta">as {name}</div>
+						{name && <div className="compose-meta">as {name}</div>}
 					</div>
 				</div>
 
