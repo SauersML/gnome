@@ -43,7 +43,7 @@ const articles: Article[] = [
 	{
 		slug: "random-walk-torus",
 		title: "\u22C8 Random Walks on a Torus",
-		abstract: "\u2261\u2237 mixing times for the discrete random walk on ${k(`\\mathbb{Z}_n \\times \\mathbb{Z}_n`)}.",
+		abstract: `\u2261\u2237 mixing times for the discrete random walk on ${k(`\\mathbb{Z}_n \\times \\mathbb{Z}_n`)}.`,
 		body: () => `
 <p>Consider the simple random walk on the discrete torus ${k(`\\mathbb{Z}_n \\times \\mathbb{Z}_n`)}: at each step, move to one of the 4 neighbors uniformly at random. The stationary distribution is uniform: ${k(`\\pi(x) = 1/n^2`)} for all ${k(`x`)}.</p>
 <p>The transition matrix ${k(`P`)} has eigenvalues indexed by ${k(`(j,k) \\in \\mathbb{Z}_n^2`)}:</p>
@@ -160,7 +160,7 @@ function ArticlePage({ article, onBack }: { article: Article; onBack: () => void
 		<div className="article-page">
 			<button className="article-back" onClick={onBack}>&larr; back</button>
 			<h1 className="article-title">{article.title}</h1>
-			<p className="article-abstract">{article.abstract}</p>
+			<p className="article-abstract" dangerouslySetInnerHTML={{ __html: article.abstract }} />
 			<div className="article-body" dangerouslySetInnerHTML={{ __html: article.body() }} />
 		</div>
 	);
@@ -314,7 +314,7 @@ function App() {
 					{articles.map((a) => (
 						<button key={a.slug} className="sidebar-item" onClick={() => setActiveArticle(a)}>
 							<span className="sidebar-item-title">{a.title}</span>
-							<span className="sidebar-item-desc">{a.abstract}</span>
+							<span className="sidebar-item-desc" dangerouslySetInnerHTML={{ __html: a.abstract }} />
 						</button>
 					))}
 				</aside>
