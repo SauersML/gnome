@@ -462,100 +462,53 @@ export class Chat extends Server<Env> {
 		);
 	}
 
-	async callKimi(recentMessages: ChatMessage[]): Promise<string | null> {
-		const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-			{ role: "system", content: buildSystemPrompt(this.customCss, this.pages) },
-		];
 
-		// Last 30 messages as conversation context (truncate long ones)
-		for (const m of recentMessages.slice(-30)) {
-			const content = m.role === "assistant" ? m.content.slice(0, 500) : `${m.user}: ${m.content}`;
-			messages.push({
-				role: m.role === "assistant" ? "assistant" : "user",
-				content,
-			});
-		}
+
+	async sendBotReply(botName: string, model: string, systemPrompt: string, maxTokens = 20480) {
+		if (this.isRateLimited()) return;
+		this.recordKimiCall();
 
 		const apiKey = (this.env as any).OPENROUTER_API_KEY;
-		if (!apiKey) {
-			console.error("No OPENROUTER_API_KEY set");
-			return null;
-		}
-
-		console.log("Calling Kimi via OpenRouter with", messages.length, "messages");
-		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"Authorization": `Bearer ${apiKey}`,
-			},
-			body: JSON.stringify({
-				model: "moonshotai/kimi-k2.5",
-				messages,
-				max_tokens: 20480,
-			}),
-		});
-
-		if (!res.ok) {
-			const errText = await res.text();
-			console.error("OpenRouter error:", res.status, errText.slice(0, 500));
-			throw new Error(`OpenRouter ${res.status}: ${errText.slice(0, 200)}`);
-		}
-
-		const data = await res.json() as any;
-		const text = data.choices?.[0]?.message?.content;
-		if (!text) {
-			console.error("No text in OpenRouter response:", JSON.stringify(data).slice(0, 500));
-			return null;
-		}
-		return text;
-	}
-
-	async callOpenRouter(model: string, systemPrompt: string, recentMessages: ChatMessage[]): Promise<string | null> {
-		const apiKey = (this.env as any).OPENROUTER_API_KEY;
-		if (!apiKey) return null;
+		if (!apiKey) { console.error("No OPENROUTER_API_KEY"); return; }
 
 		const messages: { role: string; content: string }[] = [
 			{ role: "system", content: systemPrompt },
 		];
-		for (const m of recentMessages.slice(-20)) {
+		for (const m of this.messages.slice(-30)) {
 			messages.push({
 				role: m.role === "assistant" ? "assistant" : "user",
 				content: m.role === "assistant" ? m.content.slice(0, 500) : `${m.user}: ${m.content}`,
 			});
 		}
 
-		console.log("Calling", model, "via OpenRouter with", messages.length, "messages");
-		const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"Authorization": `Bearer ${apiKey}`,
-			},
-			body: JSON.stringify({ model, messages, max_tokens: 2048 }),
-		});
-
-		if (!res.ok) {
-			const errText = await res.text();
-			throw new Error(`OpenRouter ${res.status}: ${errText.slice(0, 200)}`);
-		}
-
-		const data = await res.json() as any;
-		return data.choices?.[0]?.message?.content ?? null;
-	}
-
-	async sendBotReply(botName: string, model: string, systemPrompt: string) {
-		if (this.isRateLimited()) return;
-		this.recordKimiCall();
+		const msgId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
 		this.broadcastMessage({ type: "typing", user: botName, isTyping: true });
 		try {
-			const rawResponse = await this.callOpenRouter(model, systemPrompt, this.messages);
-			this.broadcastMessage({ type: "typing", user: botName, isTyping: false });
-			if (!rawResponse) return;
+			console.log("Calling", model, "via OpenRouter with", messages.length, "messages");
+			const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${apiKey}`,
+				},
+				body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+			});
 
-			// Parse tool calls same as Kimi
-			const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(rawResponse);
+			if (!res.ok) {
+				const errText = await res.text();
+				throw new Error(`OpenRouter ${res.status}: ${errText.slice(0, 200)}`);
+			}
+
+			const data = await res.json() as any;
+			const fullText = data.choices?.[0]?.message?.content ?? "";
+
+			this.broadcastMessage({ type: "typing", user: botName, isTyping: false });
+
+			if (!fullText) return;
+
+			// Parse tool calls
+			const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(fullText);
 
 			const toolParts: string[] = [];
 			if (cssReset) toolParts.push("🔧 _reset CSS_");
@@ -572,12 +525,7 @@ export class Chat extends Server<Env> {
 			const displayContent = displayParts.join("\n\n");
 
 			if (displayContent) {
-				const msg: ChatMessage = {
-					id: `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-					content: displayContent,
-					user: botName,
-					role: "assistant",
-				};
+				const msg: ChatMessage = { id: msgId, content: displayContent, user: botName, role: "assistant" };
 				this.saveMessage(msg);
 				this.broadcastMessage({ type: "add", ...msg });
 			}
@@ -599,9 +547,31 @@ export class Chat extends Server<Env> {
 					this.savePage(updated); this.broadcastMessage({ type: "page-update", page: updated });
 				}
 			}
+			for (const edit of edits) {
+				const existing = this.messages.find((m) => m.id === edit.id);
+				if (existing) {
+					const updated: ChatMessage = { ...existing, content: edit.content };
+					this.saveMessage(updated);
+					this.broadcastMessage({ type: "update", ...updated });
+				}
+			}
+			if (clearMessages) {
+				this.messages = [];
+				this.ctx.storage.sql.exec(`DELETE FROM messages`);
+				this.broadcastMessage({ type: "all", messages: [] });
+			}
 		} catch (e) {
 			this.broadcastMessage({ type: "typing", user: botName, isTyping: false });
-			console.error(botName, "failed:", e instanceof Error ? e.message : e);
+			const errMsg = e instanceof Error ? e.message : String(e);
+			console.error(botName, "failed:", errMsg);
+			const errChat: ChatMessage = {
+				id: `${msgId}-err`,
+				content: `Something went wrong: ${errMsg.slice(0, 200)}`,
+				user: botName,
+				role: "assistant",
+			};
+			this.saveMessage(errChat);
+			this.broadcastMessage({ type: "add", ...errChat });
 		}
 	}
 
@@ -623,134 +593,11 @@ export class Chat extends Server<Env> {
 			this.saveMessage(parsed);
 
 			if (parsed.type === "add" && KIMI_PATTERN.test(parsed.content)) {
-				if (this.isRateLimited()) {
-					const rateLimitMsg: ChatMessage = {
-						id: `kimi-${Date.now()}-rl`,
-						content: "I'm getting too many requests right now. Try again in a minute.",
-						user: "Kimi K2.5",
-						role: "assistant",
-					};
-					this.saveMessage(rateLimitMsg);
-					this.broadcastMessage({ type: "add", ...rateLimitMsg });
-					return;
-				}
-
-				this.recordKimiCall();
-				console.log("Kimi triggered by:", parsed.content.slice(0, 100));
-
-				this.broadcastMessage({ type: "typing", user: "Kimi K2.5", isTyping: true });
-
-				let rawResponse: string | null;
-				try {
-					rawResponse = await this.callKimi(this.messages);
-				} catch (e) {
-					const errMsg = e instanceof Error ? e.message : String(e);
-					console.error("Kimi call failed:", errMsg);
-					this.broadcastMessage({ type: "typing", user: "Kimi K2.5", isTyping: false });
-					const errChat: ChatMessage = {
-						id: `kimi-err-${Date.now()}`,
-						content: `Something went wrong: ${errMsg.slice(0, 200)}`,
-						user: "Kimi K2.5",
-						role: "assistant",
-					};
-					this.saveMessage(errChat);
-					this.broadcastMessage({ type: "add", ...errChat });
-					return;
-				}
-				this.broadcastMessage({ type: "typing", user: "Kimi K2.5", isTyping: false });
-				if (!rawResponse) {
-					const nullChat: ChatMessage = {
-						id: `kimi-err-${Date.now()}`,
-						content: "I got an empty response — try again?",
-						user: "Kimi K2.5",
-						role: "assistant",
-					};
-					this.saveMessage(nullChat);
-					this.broadcastMessage({ type: "add", ...nullChat });
-					return;
-				}
-
-				const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(rawResponse);
-
-				// Build display content: chat text + tool call summaries
-				const toolParts: string[] = [];
-				if (cssReset) toolParts.push("🔧 _reset CSS_");
-				if (cssAdd) toolParts.push("🔧 _added CSS_");
-				for (const e of cssEdits) toolParts.push("🔧 _edited CSS_");
-				for (const e of edits) toolParts.push(`🔧 _edited message ${e.id}_`);
-				if (clearMessages) toolParts.push("🔧 _cleared all messages_");
-				for (const p of pageAdds) toolParts.push(`🔧 _created page "${p.title}"_`);
-				for (const p of pageEdits) toolParts.push(`🔧 _edited page "${p.slug}"_`);
-
-				const displayParts: string[] = [];
-				if (chat) displayParts.push(chat);
-				if (toolParts.length) displayParts.push(toolParts.join("\n"));
-				const displayContent = displayParts.join("\n\n");
-
-				const kimiMessage: ChatMessage = {
-					id: `kimi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-					content: displayContent,
-					user: "Kimi K2.5",
-					role: "assistant",
-				};
-				this.saveMessage(kimiMessage);
-				if (displayContent) {
-					this.broadcastMessage({ type: "add", ...kimiMessage });
-				}
-
-				if (clearMessages) {
-					this.messages = [];
-					this.ctx.storage.sql.exec(`DELETE FROM messages`);
-					this.broadcastMessage({ type: "all", messages: [] });
-				}
-
-				if (cssReset) {
-					this.saveCss("");
-					this.broadcastMessage({ type: "css", css: "" });
-				}
-
-				// Apply css-edit find-and-replace operations
-				for (const edit of cssEdits) {
-					if (this.customCss.includes(edit.old)) {
-						this.saveCss(sanitizeCss(this.customCss.replace(edit.old, edit.new)));
-						this.broadcastMessage({ type: "css", css: this.customCss });
-					}
-				}
-
-				if (cssAdd) {
-					const safe = sanitizeCss(cssAdd);
-					const newCss = this.customCss ? this.customCss + "\n" + safe : safe;
-					this.saveCss(newCss);
-					this.broadcastMessage({ type: "css", css: newCss });
-				}
-
-				for (const edit of edits) {
-					const existing = this.messages.find((m) => m.id === edit.id);
-					if (existing) {
-						const updated: ChatMessage = { ...existing, content: edit.content };
-						this.saveMessage(updated);
-						this.broadcastMessage({ type: "update", ...updated });
-					}
-				}
-
-				for (const pa of pageAdds) {
-					this.savePage(pa);
-					this.broadcastMessage({ type: "page-update", page: pa });
-				}
-
-				for (const pe of pageEdits) {
-					const existing = this.pages.find((p) => p.slug === pe.slug);
-					if (existing) {
-						const updated: Page = {
-							...existing,
-							...(pe.title !== undefined && { title: pe.title }),
-							...(pe.abstract !== undefined && { abstract: pe.abstract }),
-							...(pe.body !== undefined && { body: pe.body }),
-						};
-						this.savePage(updated);
-						this.broadcastMessage({ type: "page-update", page: updated });
-					}
-				}
+				this.sendBotReply(
+					"Kimi K2.5",
+					"moonshotai/kimi-k2.5",
+					buildSystemPrompt(this.customCss, this.pages),
+				);
 			}
 
 			// Cogito: responds if mentioned by name, or randomly 1/5 messages
@@ -821,7 +668,7 @@ export class Chat extends Server<Env> {
 export default {
 	async fetch(request, env) {
 		return (
-			(await routePartykitRequest(request, env)) ||
+			(await routePartykitRequest(request, env as unknown as Record<string, unknown>)) ||
 			env.ASSETS.fetch(request)
 		);
 	},

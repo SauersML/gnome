@@ -51,4 +51,16 @@ export type Message =
 	| {
 			type: "presence";
 			count: number;
+	  }
+	| {
+			type: "stream";
+			id: string;
+			user: string;
+			delta: string;
+	  }
+	| {
+			type: "stream-end";
+			id: string;
+			user: string;
+			content: string;
 	  };

@@ -149,6 +149,23 @@ function App() {
 					return prev.map((x) => (x.slug === p.slug ? p : x));
 				});
 				setActivePage(p);
+			} else if (message.type === "stream") {
+				// Streaming delta — append to existing streaming message or create one
+				setMessages((prev) => {
+					const existing = prev.find((m) => m.id === message.id);
+					if (existing) {
+						return prev.map((m) => m.id === message.id ? { ...m, content: m.content + message.delta } : m);
+					}
+					return [...prev, { id: message.id, content: message.delta, user: message.user, role: "assistant" as const }];
+				});
+			} else if (message.type === "stream-end") {
+				// Finalize streaming message with parsed content
+				if (message.content) {
+					setMessages((prev) => prev.map((m) => m.id === message.id ? { ...m, content: message.content } : m));
+				} else {
+					// Empty response — remove the streaming placeholder
+					setMessages((prev) => prev.filter((m) => m.id !== message.id));
+				}
 			} else if (message.type === "add") {
 				const msg: ChatMessage = { id: message.id, content: message.content, user: message.user, role: message.role };
 				setMessages((prev) => {
