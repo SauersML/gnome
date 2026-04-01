@@ -116,8 +116,6 @@ function App() {
 	const [name, setName] = useState<string | null>(() => localStorage.getItem("gnome_username"));
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
 	const [activeArticle, setActiveArticle] = useState<Article | null>(null);
-	const [askingName, setAskingName] = useState(false);
-	const [pendingContent, setPendingContent] = useState("");
 	const messagesEnd = useRef<HTMLDivElement>(null);
 	const initialLoad = useRef(true);
 	const applyCss = useKimiCss();
@@ -191,12 +189,11 @@ function App() {
 						<div className="header-right">Live</div>
 					</header>
 
-					<div className="divider" />
 
 					{messages.length === 0 ? (
 						<div className="empty">
 							<div className="empty-text">
-								{askingName ? "What should we call you?" : "Nothing here yet."}
+								{!name ? "Pick a name to join." : "Nothing here yet."}
 							</div>
 						</div>
 					) : (
@@ -215,7 +212,7 @@ function App() {
 					)}
 
 					<div className="compose">
-						{askingName ? (
+						{!name ? (
 							<form
 								className="compose-form"
 								onSubmit={(e) => {
@@ -227,11 +224,6 @@ function App() {
 									if (!trimmed) return;
 									localStorage.setItem("gnome_username", trimmed);
 									setName(trimmed);
-									setAskingName(false);
-									if (pendingContent) {
-										sendMessage(pendingContent, trimmed);
-										setPendingContent("");
-									}
 								}}
 							>
 								<input
@@ -253,12 +245,6 @@ function App() {
 										"content",
 									) as HTMLInputElement;
 									if (!input.value.trim()) return;
-									if (!name) {
-										setPendingContent(input.value.trim());
-										setAskingName(true);
-										input.value = "";
-										return;
-									}
 									sendMessage(input.value, name);
 									input.value = "";
 								}}
