@@ -20,6 +20,7 @@ interface KimiAction {
 	cssAdd: string | null;
 	cssEdits: { old: string; new: string }[];
 	cssReset: boolean;
+	clearMessages: boolean;
 	edits: { id: string; content: string }[];
 }
 
@@ -28,6 +29,7 @@ function parseKimiResponse(text: string): KimiAction {
 	let cssAdd = "";
 	const cssEdits: { old: string; new: string }[] = [];
 	let cssReset = false;
+	let clearMessages = false;
 	const edits: { id: string; content: string }[] = [];
 
 	// Extract css-reset blocks
@@ -54,6 +56,13 @@ function parseKimiResponse(text: string): KimiAction {
 		chat = chat.replace(match[0], "").trim();
 	}
 
+	// Extract clear-messages blocks
+	const clearRegex = /```clear-messages\s*\n?[\s\S]*?```/g;
+	for (const match of text.matchAll(clearRegex)) {
+		clearMessages = true;
+		chat = chat.replace(match[0], "").trim();
+	}
+
 	// Extract edit blocks: ```edit id=<msgId>\n<new content>\n```
 	const editBlockRegex = /```edit\s+id=(\S+)\s*\n([\s\S]*?)```/g;
 	for (const match of text.matchAll(editBlockRegex)) {
@@ -61,13 +70,73 @@ function parseKimiResponse(text: string): KimiAction {
 		chat = chat.replace(match[0], "").trim();
 	}
 
-	return { chat, cssAdd: cssAdd.trim() || null, cssEdits, cssReset, edits };
+	return { chat, cssAdd: cssAdd.trim() || null, cssEdits, cssReset, clearMessages, edits };
 }
 
+const PAGE_STRUCTURE = `<canvas class="pixel-bg" /> <!-- animated background -->
+<div class="layout">
+  <div class="app">
+    <header class="header">
+      <div class="brand">gnome<span class="dot">.</span>science</div>
+      <div class="header-right">Live</div>
+    </header>
+    <div class="messages">
+      <!-- repeated for each message: -->
+      <div class="msg msg-self? msg-assistant? msg-new?">
+        <span class="msg-who" style="color: {userColor}">username</span>
+        <span class="msg-body">message text</span>
+      </div>
+    </div>
+    <div class="compose">
+      <form class="compose-form">
+        <input class="compose-input" placeholder="Write something..." />
+        <button class="compose-send">Send</button>
+      </form>
+      <div class="compose-meta">as username</div>
+    </div>
+  </div>
+  <aside class="sidebar">
+    <div class="sidebar-label">Papers</div>
+    <button class="sidebar-item">
+      <span class="sidebar-item-title">...</span>
+      <span class="sidebar-item-desc">...</span>
+    </button>
+  </aside>
+</div>`;
+
+const BASE_CSS = `/* CSS variables */
+:root {
+  --mist: #b5cfac; --light: #dae8d2; --sage: #7da87a; --fern: #4a7a4a;
+  --moss: #2d5a36; --earth: #1d3322; --glow: #6aec78; --gold: #e2b84a; --amber: #cf9636;
+}
+html, body { background: #0a140c; color: var(--mist); font-family: "Hanken Grotesk", sans-serif; }
+.pixel-bg { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+#root { height: 100%; position: relative; z-index: 1; overflow: hidden; }
+.layout { display: flex; height: 100%; padding-left: clamp(24px, 8vw, 14%); }
+.app { display: flex; flex-direction: column; height: 100%; width: 50%; max-width: 580px; }
+.header { padding: clamp(28px, 6vh, 52px) 0 clamp(16px, 3vh, 24px); display: flex; align-items: baseline; justify-content: space-between; }
+.brand { font-family: "Syne", sans-serif; font-size: clamp(22px, 3.5vw, 30px); font-weight: 700; color: var(--light); }
+.brand .dot { color: var(--gold); }
+.messages { flex: 1; overflow-y: auto; padding: clamp(16px, 3vh, 28px) 0 60px; }
+.msg { padding: 5px 0; }
+.msg-who { font-family: "Syne", sans-serif; font-size: 0.82em; font-weight: 600; color: var(--gold); margin-right: 10px; }
+.msg-self .msg-who { color: var(--glow); }
+.msg-body { color: var(--light); word-wrap: break-word; }
+.msg-assistant .msg-who { color: var(--amber); }
+.msg-assistant .msg-body { color: var(--light); }
+.compose { flex-shrink: 0; padding: clamp(14px, 2.5vh, 24px) 0 clamp(24px, 5vh, 44px); }
+.compose-input { flex: 1; background: none; border: none; color: var(--light); font-size: clamp(14px, 1.6vw, 16px); }
+.compose-send { background: none; border: none; color: var(--light); text-transform: uppercase; }
+.compose-meta { font-size: 11px; color: var(--mist); }
+.sidebar { flex: 1; max-width: 380px; border-left: 1px solid var(--moss); padding: clamp(28px, 6vh, 52px) clamp(24px, 3vw, 40px); }
+.sidebar-item { display: block; width: 100%; background: none; border: none; border-bottom: 1px solid rgba(45, 90, 54, 0.3); padding: 16px 0; cursor: pointer; }
+.sidebar-item-title { font-family: "Syne", sans-serif; font-weight: 600; color: var(--light); }
+.sidebar-item-desc { font-size: 0.8em; color: var(--mist); }`;
+
 function buildContext(messages: ChatMessage[], customCss: string): string {
-	const recentIds = messages.slice(-10).map((m) => `  ${m.id} (${m.user}): ${m.content}`).join("\n");
-	const currentCssSnippet = customCss ? `\n\nCurrent custom CSS:\n${customCss}` : "\n\nNo custom CSS is currently applied.";
-	return `You're chatting in a live room at gnome.science. Here are the recent messages:\n${recentIds}${currentCssSnippet}\n\nYou have a few tools you can use by including fenced code blocks in your response. Totally optional — feel free to just chat.\n\n\`\`\`css-add — appends new CSS rules to what's already there.\n\`\`\`css-add\n.msg-body { color: red; }\n\`\`\`\n\n\`\`\`css-edit — tweaks existing custom CSS. Put the old snippet above a --- line and the replacement below.\n\`\`\`css-edit\n.msg-body { color: red; }\n---\n.msg-body { color: blue; }\n\`\`\`\n\n\`\`\`css-reset — wipes all custom CSS back to defaults.\n\`\`\`css-reset\n\`\`\`\n\n\`\`\`edit id=<message_id> — rewrites a message.\n\`\`\`edit id=abc123\nNew content\n\`\`\`\n\nPlease use css-add or css-edit instead of plain css blocks so the tools work correctly.`;
+	const recentIds = messages.slice(-100).map((m) => `  ${m.id} (${m.user}): ${m.content}`).join("\n");
+	const currentCssSnippet = customCss ? `\n\nCustom CSS currently applied:\n${customCss}` : "\n\nNo custom CSS is currently applied.";
+	return `You're chatting in a live room at gnome.science. Here are the recent messages:\n${recentIds}\n\nPage HTML structure:\n${PAGE_STRUCTURE}\n\nBase CSS (always loaded):\n${BASE_CSS}${currentCssSnippet}\n\nYour custom CSS gets injected into a <style> tag in <head>, so it overrides the base styles above.\n\nYou have a few tools you can use by including fenced code blocks in your response. Totally optional — feel free to just chat.\n\n\`\`\`css-add — appends new CSS rules to what's already there.\n\`\`\`css-add\n.msg-body { color: red; }\n\`\`\`\n\n\`\`\`css-edit — tweaks existing custom CSS. Put the old snippet above a --- line and the replacement below.\n\`\`\`css-edit\n.msg-body { color: red; }\n---\n.msg-body { color: blue; }\n\`\`\`\n\n\`\`\`css-reset — wipes all custom CSS back to defaults.\n\`\`\`css-reset\n\`\`\`\n\n\`\`\`edit id=<message_id> — rewrites a message.\n\`\`\`edit id=abc123\nNew content\n\`\`\`\n\n\`\`\`clear-messages — wipes all chat messages.\n\`\`\`clear-messages\n\`\`\`\n\nPlease use css-add or css-edit instead of plain css blocks so the tools work correctly.`;
 }
 
 export class Chat extends Server<Env> {
@@ -190,7 +259,7 @@ export class Chat extends Server<Env> {
 	}
 
 	async callKimi(recentMessages: ChatMessage[]): Promise<string | null> {
-		const context = recentMessages.slice(-20).map((m) => ({
+		const context = recentMessages.slice(-200).map((m) => ({
 			role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
 			content: m.role === "assistant" ? m.content : `${m.user}: ${m.content}`,
 		}));
@@ -237,7 +306,7 @@ export class Chat extends Server<Env> {
 
 				const rawResponse = await this.callKimi(this.messages);
 				if (!rawResponse) return;
-				const { chat, cssAdd, cssEdits, cssReset, edits } = parseKimiResponse(rawResponse);
+				const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits } = parseKimiResponse(rawResponse);
 
 				if (chat) {
 					const kimiMessage: ChatMessage = {
@@ -248,6 +317,12 @@ export class Chat extends Server<Env> {
 					};
 					this.saveMessage(kimiMessage);
 					this.broadcastMessage({ type: "add", ...kimiMessage });
+				}
+
+				if (clearMessages) {
+					this.messages = [];
+					this.ctx.storage.sql.exec(`DELETE FROM messages`);
+					this.broadcastMessage({ type: "all", messages: [] });
 				}
 
 				if (cssReset) {
@@ -279,6 +354,17 @@ export class Chat extends Server<Env> {
 				}
 			}
 		}
+	}
+
+	async onRequest(request: Request) {
+		const url = new URL(request.url);
+		if (url.pathname.endsWith("/clear") && request.method === "POST") {
+			this.messages = [];
+			this.ctx.storage.sql.exec(`DELETE FROM messages`);
+			this.broadcastMessage({ type: "all", messages: [] });
+			return new Response("cleared");
+		}
+		return new Response("not found", { status: 404 });
 	}
 }
 

@@ -271,17 +271,14 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 				}
 				if (minDist < HALO) {
 					const p = 1.0 - minDist / HALO; // 1 at text, 0 at edge
+					// each pixel has a unique "sensitivity" — some go dark early, some resist
 					const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
-					if (noise < p * p * 0.6) {
-						// some go black — more likely close to text
-						r = 0; g = 0; b = 0;
-					} else {
-						// rest dimmed gently
-						const dim = 1.0 - p * 0.45;
-						r = (r * dim) | 0;
-						g = (g * dim) | 0;
-						b = (b * dim) | 0;
-					}
+					const sensitivity = 0.3 + noise * 0.7; // range [0.3, 1.0]
+					// smooth continuous dim: low-sensitivity pixels darken aggressively near text
+					const dim = Math.max(0, 1.0 - (p * p) / (sensitivity * sensitivity));
+					r = (r * dim) | 0;
+					g = (g * dim) | 0;
+					b = (b * dim) | 0;
 				}
 
 				ctx.fillStyle = `rgb(${r},${g},${b})`;
