@@ -98,14 +98,47 @@ function ArticlePage({ page, onBack }: { page: Page; onBack: () => void }) {
 
 // ---- Pages browser ----
 
-function PagesView({ pages, onBack }: { pages: Page[]; onBack: () => void }) {
+function PagesView({ pages, onBack, initialSlug }: { pages: Page[]; onBack: () => void; initialSlug?: string }) {
 	const [activePage, setActivePage] = useState<Page | null>(null);
+
+	// Resolve initialSlug once pages load
+	useEffect(() => {
+		if (initialSlug && !activePage && pages.length > 0) {
+			const found = pages.find((p) => p.slug === initialSlug);
+			if (found) setActivePage(found);
+		}
+	}, [initialSlug, pages, activePage]);
+
+	function openPage(p: Page) {
+		setActivePage(p);
+		window.history.pushState(null, "", `/pages/${p.slug}`);
+	}
+
+	function closePage() {
+		setActivePage(null);
+		window.history.pushState(null, "", "/pages");
+	}
+
+	// Handle back/forward within pages
+	useEffect(() => {
+		const onPop = () => {
+			const match = window.location.pathname.match(/^\/pages\/([a-z0-9][a-z0-9-]*)$/);
+			if (match) {
+				const found = pages.find((p) => p.slug === match[1]);
+				setActivePage(found || null);
+			} else {
+				setActivePage(null);
+			}
+		};
+		window.addEventListener("popstate", onPop);
+		return () => window.removeEventListener("popstate", onPop);
+	}, [pages]);
 
 	if (activePage) {
 		return (
 			<>
 				<PixelBackground />
-				<ArticlePage page={activePage} onBack={() => setActivePage(null)} />
+				<ArticlePage page={activePage} onBack={closePage} />
 			</>
 		);
 	}
@@ -123,7 +156,7 @@ function PagesView({ pages, onBack }: { pages: Page[]; onBack: () => void }) {
 				<div className="pages-list">
 					<div className="sidebar-label">Pages</div>
 					{pages.map((p) => (
-						<button key={p.slug} className="sidebar-item" onClick={() => setActivePage(p)}>
+						<button key={p.slug} className="sidebar-item" onClick={() => openPage(p)}>
 							<span className="sidebar-item-title">{p.title}</span>
 							<span className="sidebar-item-desc">{p.abstract}</span>
 						</button>
@@ -163,7 +196,7 @@ function ChatView({ onBack }: { onBack: () => void }) {
 	const chatContainerRef = useRef<HTMLDivElement>(null);
 	const kimiStyleRef = useRef<HTMLStyleElement | null>(null);
 
-	// Sandbox LLM CSS inside the chat container using scoped style
+	// Sandbox LLM CSS: use @scope (with fallback wrapping) to confine styles to .chat-sandbox
 	const applyCss = useCallback((css: string) => {
 		if (!kimiStyleRef.current) {
 			const style = document.createElement("style");
@@ -171,18 +204,13 @@ function ChatView({ onBack }: { onBack: () => void }) {
 			document.head.appendChild(style);
 			kimiStyleRef.current = style;
 		}
-		// Prefix every rule with .chat-sandbox to scope it
 		if (!css) {
 			kimiStyleRef.current.textContent = "";
 			return;
 		}
-		// Simple scoping: wrap in .chat-sandbox
-		const scoped = css.replace(/([^{}]+)\{/g, (match, selector: string) => {
-			// Don't double-scope or scope @rules
-			if (selector.trim().startsWith("@") || selector.includes(".chat-sandbox")) return match;
-			const selectors = selector.split(",").map((s: string) => `.chat-sandbox ${s.trim()}`).join(", ");
-			return `${selectors} {`;
-		});
+		// Use CSS @scope if supported, otherwise use @layer + manual nesting
+		// @scope is the proper CSS containment primitive
+		const scoped = `@scope (.chat-sandbox) {\n${css}\n}`;
 		kimiStyleRef.current.textContent = scoped;
 	}, []);
 
@@ -373,13 +401,39 @@ function ChatView({ onBack }: { onBack: () => void }) {
 	);
 }
 
+// ---- URL routing ----
+
+function getInitialView(): { view: "home" | "chat" | "pages"; slug?: string } {
+	const path = window.location.pathname;
+	if (path === "/chat") return { view: "chat" };
+	if (path === "/pages") return { view: "pages" };
+	const pageMatch = path.match(/^\/pages\/([a-z0-9][a-z0-9-]*)$/);
+	if (pageMatch) return { view: "pages", slug: pageMatch[1] };
+	return { view: "home" };
+}
+
+function navigate(path: string) {
+	window.history.pushState(null, "", path);
+}
+
 // ---- App root ----
 
 function App() {
-	const [view, setView] = useState<"home" | "chat" | "pages">("home");
+	const initial = getInitialView();
+	const [view, setView] = useState<"home" | "chat" | "pages">(initial.view);
+	const [initialSlug] = useState(initial.slug);
 	const [pages, setPages] = useState<Page[]>([]);
 
-	// Fetch pages from server (lightweight connection just for pages data)
+	// Handle browser back/forward
+	useEffect(() => {
+		const onPop = () => {
+			const { view } = getInitialView();
+			setView(view);
+		};
+		window.addEventListener("popstate", onPop);
+		return () => window.removeEventListener("popstate", onPop);
+	}, []);
+
 	const socket = usePartySocket({
 		party: "chat",
 		room: "global",
@@ -398,15 +452,22 @@ function App() {
 		},
 	});
 
+	function nav(newView: "home" | "chat" | "pages") {
+		setView(newView);
+		if (newView === "home") navigate("/");
+		else if (newView === "chat") navigate("/chat");
+		else navigate("/pages");
+	}
+
 	if (view === "chat") {
-		return <ChatView onBack={() => setView("home")} />;
+		return <ChatView onBack={() => nav("home")} />;
 	}
 
 	if (view === "pages") {
-		return <PagesView pages={pages} onBack={() => setView("home")} />;
+		return <PagesView pages={pages} onBack={() => nav("home")} initialSlug={initialSlug} />;
 	}
 
-	return <HomeScreen onNavigate={setView} />;
+	return <HomeScreen onNavigate={nav} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -611,13 +611,26 @@ html, body {
 
 .article-body img {
 	max-width: 100%;
+	width: 100%;
 	height: auto;
-	border-radius: 8px;
-	margin: 28px 0;
+	border-radius: 6px;
 	display: block;
-	background: #f5f5f5;
-	border: 1px solid rgba(45, 90, 54, 0.25);
-	padding: 8px;
+}
+
+.article-body .figure {
+	margin: 32px 0;
+	background: rgba(255, 255, 255, 0.03);
+	border-radius: 8px;
+	padding: 16px;
+	overflow: hidden;
+}
+
+.article-body .figure-caption {
+	font-size: 0.82em;
+	color: var(--sage);
+	margin-top: 10px;
+	line-height: 1.45;
+	font-style: italic;
 }
 
 .article-body strong {
@@ -731,11 +744,13 @@ html, body {
 	border-color: var(--sage);
 }
 
-/* ---- Chat layout (replaces old .layout) ---- */
+/* ---- Chat layout ---- */
 .chat-sandbox {
 	height: 100%;
 	position: relative;
 	z-index: 1;
+	contain: layout style paint;
+	overflow: hidden;
 }
 
 .chat-layout {

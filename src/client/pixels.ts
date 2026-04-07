@@ -55,19 +55,6 @@ float fresnelSchlick(float cosTheta, float r0) {
     return r0 + (1.0 - r0) * x2 * x2 * x;
 }
 
-// Thin-film: Fabry-Perot for low-finesse coating
-float thinFilm(float nm, float d, float nFilm, float cosI) {
-    float sinI = sqrt(max(0.0, 1.0 - cosI*cosI));
-    float sinR = sinI / nFilm;
-    float cosR = sqrt(max(0.0, 1.0 - sinR*sinR));
-    float opd = 2.0 * nFilm * d * cosR;
-    float phase = opd / nm * 6.2831853 + 3.1415927;
-    float R = pow((nFilm - 1.0)/(nFilm + 1.0), 2.0);
-    float F = 4.0 * R / ((1.0 - R) * (1.0 - R));
-    float sinH = sin(phase * 0.5);
-    return 1.0 / (1.0 + F * sinH * sinH);
-}
-
 // Voronoi caustic network
 float caustics(vec2 p, float t) {
     float c = 0.0;
@@ -111,7 +98,6 @@ void main() {
     float rows = u_gridSize.y;
     float nx = col / cols;
     float ny = row / rows;
-    vec2 subPx = fract(pixel / u_px);
     float s = u_time / 1000.0;
 
     // Per-pixel material (deterministic)
@@ -132,10 +118,6 @@ void main() {
     float absWidth = 35.0 + hash(cell, 77.0) * 50.0;
     float absStrength = 1.8 + h4 * 2.5;
     float thickness = 0.5 + hash(cell, 111.0) * 0.9;
-
-    float filmThickness = 80.0 + hash(cell, 300.0) * 400.0;
-    float filmIOR = 1.2 + hash(cell, 310.0) * 0.6;
-    float filmPresence = smoothstep(0.6, 0.8, hash(cell, 320.0));
 
     float p1 = h5 * 6.283;
     float p2 = h6 * 6.283;
@@ -176,72 +158,46 @@ void main() {
                    + 12.0*cos(s*0.42 + p1*0.7 + nx*5.0 + ny*1.5) * (0.5 + 0.5*sw4);
     float absC = absCenter + absShift;
     float thickMod = thickness * (0.75 + 0.25*sin(s*0.12 + p2 + sw1*0.5 + sw3*0.3));
-    float filmT = filmThickness * (1.0 + 0.35*sin(s*0.2 + p3 + sw2*0.4));
 
-    // ─── 6 lights: Lissajous paths that sweep the full screen ───
-    // Irrational frequency ratios so paths never exactly repeat
-    vec2 lightPos[6];
-    float lightPower[6];
-    float lightRadius[6];
-    float lightTempK[6];
+    // ─── 4 lights: Lissajous paths ───
+    vec2 lightPos[4];
+    float lightPower[4];
+    float lightRadius[4];
+    float lightTempK[4];
 
-    // L0: cool teal, wide sweep, Lissajous 3:2
     lightPos[0] = vec2(
-        0.5 + 0.55*sin(s*0.19*3.0 + 0.0),
+        0.5 + 0.55*sin(s*0.19*3.0),
         0.5 + 0.50*sin(s*0.19*2.0 + 1.2)
     );
     lightPower[0] = 0.50; lightRadius[0] = 0.65; lightTempK[0] = 6000.0;
 
-    // L1: cool blue-white, Lissajous 5:3, perturbed
     lightPos[1] = vec2(
-        0.5 + 0.50*sin(s*0.14*5.0 + 0.8) + 0.08*sin(s*0.41),
-        0.5 + 0.45*sin(s*0.14*3.0 + 2.5) + 0.06*cos(s*0.53)
+        0.5 + 0.50*sin(s*0.14*5.0 + 0.8),
+        0.5 + 0.45*sin(s*0.14*3.0 + 2.5)
     );
     lightPower[1] = 0.45; lightRadius[1] = 0.55; lightTempK[1] = 8000.0;
 
-    // L2: warm amber band, figure-eight (2:1)
     lightPos[2] = vec2(
         0.5 + 0.48*sin(s*0.22*2.0 + 3.7),
         0.5 + 0.42*sin(s*0.22*1.0 + 0.4)
     );
     lightPower[2] = 0.38; lightRadius[2] = 0.5; lightTempK[2] = 3500.0;
 
-    // L3: green-white daylight, slow diagonal drift with loops
     lightPos[3] = vec2(
         0.5 + 0.40*sin(s*0.11) + 0.15*sin(s*0.37 + 1.0),
         0.5 + 0.40*cos(s*0.13) + 0.12*cos(s*0.43 + 2.0)
     );
     lightPower[3] = 0.35; lightRadius[3] = 0.5; lightTempK[3] = 5200.0;
 
-    // L4: cool teal, Lissajous 7:4, fast traveler
-    lightPos[4] = vec2(
-        0.5 + 0.45*sin(s*0.18*7.0 + 5.0),
-        0.5 + 0.40*sin(s*0.18*4.0 + 1.8)
-    );
-    lightPower[4] = 0.30; lightRadius[4] = 0.4; lightTempK[4] = 7000.0;
-
-    // L5: violet accent, tight spiral
-    lightPos[5] = vec2(
-        0.5 + (0.25 + 0.20*sin(s*0.08))*sin(s*0.35),
-        0.5 + (0.25 + 0.20*sin(s*0.08))*cos(s*0.35)
-    );
-    lightPower[5] = 0.22; lightRadius[5] = 0.35; lightTempK[5] = 10000.0;
-
-    // Spectral integration (8 wavelengths, same as original)
     vec3 totalXYZ = vec3(0.0);
-
-    // Caustic enhancement
     float caust = caustics(vec2(nx, ny), s) * 0.12;
 
-    for (int wi = 0; wi < 8; wi++) {
+    for (int wi = 0; wi < 5; wi++) {
         float nm;
-        if      (wi == 0) nm = 420.0;
-        else if (wi == 1) nm = 460.0;
-        else if (wi == 2) nm = 500.0;
-        else if (wi == 3) nm = 530.0;
-        else if (wi == 4) nm = 560.0;
-        else if (wi == 5) nm = 590.0;
-        else if (wi == 6) nm = 630.0;
+        if      (wi == 0) nm = 440.0;
+        else if (wi == 1) nm = 500.0;
+        else if (wi == 2) nm = 560.0;
+        else if (wi == 3) nm = 620.0;
         else              nm = 670.0;
 
         vec3 cmf = wavelengthToXYZ(nm);
@@ -252,16 +208,11 @@ void main() {
         float alpha = absStrength * exp(-0.5 * absDelta * absDelta);
         float transmission = exp(-alpha * thickMod);
 
-        // Thin-film interference
         float filmMod = 1.0;
-        if (filmPresence > 0.0) {
-            float viewCos = 0.85 + 0.1*(subPx.x + subPx.y - 1.0);
-            filmMod = mix(1.0, thinFilm(nm, filmT, filmIOR, viewCos), filmPresence);
-        }
 
         float intensity = 0.0;
 
-        for (int li = 0; li < 6; li++) {
+        for (int li = 0; li < 4; li++) {
             vec2 lp = lightPos[li];
             float lPow = lightPower[li];
             float lRad = lightRadius[li];
@@ -269,9 +220,7 @@ void main() {
             if      (li == 0) lTemp = lightTempK[0];
             else if (li == 1) lTemp = lightTempK[1];
             else if (li == 2) lTemp = lightTempK[2];
-            else if (li == 3) lTemp = lightTempK[3];
-            else if (li == 4) lTemp = lightTempK[4];
-            else              lTemp = lightTempK[5];
+            else              lTemp = lightTempK[3];
 
             vec2 dv = vec2(nx, ny) - lp;
             float d2 = dot(dv, dv);
@@ -321,7 +270,7 @@ void main() {
     }
 
     // XYZ to RGB — same scale as original (0-255 space)
-    float scale = 65.0;
+    float scale = 100.0;
     vec3 lr = xyzToRGB(totalXYZ * scale);
 
     float r = baseColor.x + lr.x;
@@ -332,15 +281,6 @@ void main() {
     r = clamp(r, 0.0, 255.0);
     g = clamp(g, 0.0, 255.0);
     b = clamp(b, 0.0, 255.0);
-
-    // Pixel gap
-    float gapSize = 0.06;
-    float gapFade = smoothstep(0.0, gapSize, subPx.x) * smoothstep(0.0, gapSize, subPx.y)
-                  * smoothstep(0.0, gapSize, 1.0 - subPx.x) * smoothstep(0.0, gapSize, 1.0 - subPx.y);
-    float gapDim = mix(0.7, 1.0, gapFade);
-    r *= gapDim;
-    g *= gapDim;
-    b *= gapDim;
 
     // Text halo dimming
     vec2 haloUV = (cell + 0.5) / u_gridSize;
@@ -437,13 +377,12 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		const rects: Rect[] = [];
 		const range = document.createRange();
 
-		// Walk text nodes and measure each word individually for tight rects
+		// Walk actual text nodes and measure each word for tight per-character halo
 		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 		let node: Text | null;
 		while ((node = walker.nextNode() as Text | null)) {
 			const txt = node.textContent;
 			if (!txt || !txt.trim()) continue;
-			// Find each contiguous run of non-whitespace and measure it
 			const wordRegex = /\S+/g;
 			let match: RegExpExecArray | null;
 			while ((match = wordRegex.exec(txt)) !== null) {
@@ -467,25 +406,8 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		return rects;
 	}
 
-	function getSidebarBorderCol(): number {
-		const sidebar = document.querySelector(".sidebar") as HTMLElement | null;
-		if (!sidebar) return -1;
-		const rect = sidebar.getBoundingClientRect();
-		return Math.floor(rect.left / PX);
-	}
-
 	function buildHaloTexture(textRects: Rect[]) {
-		// Fast approach: mark cells near text rects by expanding each rect by HALO,
-		// then compute dim only for marked cells
 		for (let i = 0; i < cols * rows; i++) haloData[i] = 255;
-
-		// Black out the pixel column overlapping the sidebar border
-		const borderCol = getSidebarBorderCol();
-		if (borderCol >= 0 && borderCol < cols) {
-			for (let r = 0; r < rows; r++) {
-				haloData[r * cols + borderCol] = 0;
-			}
-		}
 
 		// For each text rect, only touch the cells within HALO distance
 		for (let ri = 0; ri < textRects.length; ri++) {
@@ -518,13 +440,14 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	}
 
 	function resize() {
-		const dpr = window.devicePixelRatio || 1;
-		canvas.width = Math.round(window.innerWidth * dpr);
-		canvas.height = Math.round(window.innerHeight * dpr);
 		cols = Math.ceil(window.innerWidth / PX);
 		rows = Math.ceil(window.innerHeight / PX);
+		// Render at cell resolution — 1 pixel per grid cell, CSS scales up
+		canvas.width = cols;
+		canvas.height = rows;
+		canvas.style.imageRendering = "pixelated";
 		haloData = new Uint8Array(cols * rows);
-		gl.viewport(0, 0, canvas.width, canvas.height);
+		gl.viewport(0, 0, cols, rows);
 		haloStale = true;
 	}
 
@@ -536,8 +459,8 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 			haloStale = false;
 		}
 		gl.uniform1f(uTime, t);
-		gl.uniform2f(uRes, canvas.width, canvas.height);
-		gl.uniform1f(uPx, PX * (window.devicePixelRatio || 1));
+		gl.uniform2f(uRes, cols, rows);
+		gl.uniform1f(uPx, 1.0);
 		gl.uniform2f(uGridSize, cols, rows);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 		animId = requestAnimationFrame(draw);
