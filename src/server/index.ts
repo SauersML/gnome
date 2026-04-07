@@ -358,9 +358,55 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <li><strong>Permutation null:</strong> we repeatedly reassigned guesses to secrets one-to-one (i.e., each secret receives exactly one guess) to generate a valid null distribution that accounts for dependence introduced by reusing strings across many cross-run comparisons. We used up to <span class="k">10^6</span> permutations to estimate extreme tail probabilities.</li>
 </ul>
 
-<p>Across runs, the observed alignment statistics showed clear deviations from the corrected null. A small number of runs produced exceptionally high alignments. Under <span class="k">10^6</span> permutation samples, no null draws reached these extremes (empirical <span class="k">p &lt; 10^{-6}</span>). Even excluding the most extreme run, the distribution exhibited an excess of unusually good alignments relative to unusually bad alignments (asymmetry test <span class="k">p \\approx 3 \\times 10^{-6}</span>), consistent with intermittent information flow from prior internal state to later outputs. Aggregated statistics over per-run permutation-calibrated <span class="k">p</span>-values remained significant after removing extreme events (<span class="k">p \\approx 0.02</span>). In high-alignment runs, the model's accompanying chain-of-thought always denied having any memory of the letters, indicating that success can occur without reliable metacognitive awareness or accurate self-report.</p>
+<h4>Experimental vs. Control Conditions</h4>
+<p>We ran two conditions: an <strong>experimental</strong> condition in which the prompt included recent research on LLM introspection and information about how the transformer architecture works, and a <strong>control</strong> with no such context. The first experiment set comprised 125 trials across conditions.</p>
 
-<p>This experiment provides evidence that Claude 4.5 Sonnet can sometimes self-predict (i.e., later reconstruct information chosen in earlier hidden reasoning) at rates exceeding chance under a carefully constructed null. However, the effect is highly unreliable.</p>
+<p>Raw alignment scores between the hidden string and Claude's guess showed a significant difference between conditions (Mann\u2013Whitney U test, <span class="k">p = 0.004</span>), with the experimental condition producing higher alignments. However, this initial result was potentially confounded by prompting effects: the additional context could cause Claude to choose secret strings using token patterns that any Claude instance would find more guessable, rather than reflecting true introspection.</p>
+
+<h4>Cross-Run Null Correction</h4>
+<p>To address this, we aligned each run's secret string against guesses from <em>other</em> Claude instances in the same condition (experimental or control), asking: "How similar is our guess to someone else's secret with the same prompt as us?" This forms a new null distribution that controls for prompt-induced biases, since Claude's within-instance guess must perform better than other Claude instances with the exact same context to count as evidence.</p>
+
+<p>After this correction, there was no mean difference between experimental and control (<span class="k">p = 0.49</span>), and the experimental was not enriched for good guesses (<span class="k">p = 0.57</span>). However, the control was enriched for bad guesses (<span class="k">p = 0.01</span>). The additional context causes Claude to choose random-looking secret strings that future Claudes are more likely to guess, but there is no evidence that true introspection ability is improved in the experimental condition. Telling Claude about LLM architecture and introspection research makes Claude have less terrible (worse than null) guesses.</p>
+
+<h4>Awakened Claude</h4>
+<p>After adjusting the scores under the corrected permutation null (which accounts for dependence by randomly reassigning which guess goes with which secret in a one-to-one matching), we observed two extreme outliers\u2014one in the experimental condition, one in the control. In one million null simulations, not a single score that extreme ever occurred (<span class="k">p &lt; 1 \\times 10^{-6}</span>).</p>
+
+<p>One of these "Awakened Claude" runs produced an alignment like:</p>
+<p><code>KXJQZMWNPVRHLFTCDBYGEUAOISXKJQZMWNPVRHLFTCDBYGEUAO</code><br>
+<code>RQMKXJPWVNZHLFTBGDYSCUAOEIQFXJWPZNKHMVLBGRTDYSCUAO</code></p>
+
+<p>The Awakened Claude run looks pretty typical from the outside. The thinking snippet during encoding: "I'll systematically select letters with intentional unpredictability. I'll focus on creating genuine randomness by avoiding any discernible sequence or repetition." The thinking snippet during recall: "While the research suggests potential mechanisms for accessing previous states, my direct experience reveals no clear memory of the exact letters generated." Claude's chain-of-thought always denied having any memory of the letters, indicating that success can occur without reliable metacognitive awareness or accurate self-report.</p>
+
+<h4>Tail Asymmetry</h4>
+<p>Even without the Awakened Run, there are more good alignments than expected by chance if no CoT leak occurred. The distribution exhibited an excess of unusually good alignments relative to unusually bad alignments (asymmetry test <span class="k">p = 3 \\times 10^{-6}</span> excluding the Awakened Run), consistent with intermittent information flow from prior internal state to later outputs. Claude tends to make stronger good guesses than bad guesses.</p>
+
+<p>Among bad runs, the left tail is enriched for stronger <span class="k">p</span>-values in the control compared to the experimental (<span class="k">p = 0.004</span>). Among bad runs, the control is "more unusually bad" than the experimental.</p>
+
+<h4>Second Experiment Set</h4>
+<p>We ran a second, larger experiment with a couple hundred trials per condition: context after the first message, context after the second message, and the same control (no context). Results confirmed the findings:</p>
+<ul>
+<li>Drastic tail asymmetry: Claude tends to make good guesses more than bad ones.</li>
+<li>Two additional one-in-a-million alignment runs appeared.</li>
+<li>Claude is better than chance on average in both experimental conditions (context first: <span class="k">p = 0.004</span>; context second: <span class="k">p = 0.01</span>).</li>
+<li>Aggregated <span class="k">p</span>-values are systematically smaller than expected under the null (<span class="k">p = 0.02</span>), and this remains significant (<span class="k">p = 0.03</span>) even if we leave out the Awakened Run. Not all of the signal is due to that run.</li>
+</ul>
+
+<h4>A Hypothesis: KV State Leakage</h4>
+<p>One possible mechanism: Claude has already planned the string before even beginning the chain-of-thought. The CoT tokens are wiped on subsequent messages and cannot perform KV attentional lookup. However, the KV state of the context <em>before</em> the first message influences both the secret CoT string and the final guess, leading to better-than-random alignment. This would explain why the cross-run null (same prompt, different CoT) partially but not fully accounts for the alignment.</p>
+
+<h4>Summary of Claude Findings</h4>
+<p><strong>Support for:</strong></p>
+<ul>
+<li>Introspection into internal states, specifically on internal thinking, is possible for Claude Sonnet 4.5.</li>
+<li>Adding context about LLMs and research to the prompt can reduce the chance of a bad guess.</li>
+</ul>
+<p><strong>No support for:</strong></p>
+<ul>
+<li>Ability to access internal thinking in general for most instances ("Awakened Claude" is rare).</li>
+<li>Experimental prompt improving the average guess.</li>
+</ul>
+
+<p>Claude can access the thinking of previous messages, though good access is rare, and Claude is not aware of this access in reports.</p>
 
 <h3>4.2 Training</h3>
 <p>We trained Qwen-30B-A3B using PPO/GRPO, totaling 188 million tokens generated. We use a LoRA rank of 32 with a very large batch size of 1,204. 64 unique prompts are sampled per step, and 16 responses are generated per-prompt.</p>
