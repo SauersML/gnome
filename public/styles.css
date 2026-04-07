@@ -749,7 +749,7 @@ html, body {
 	height: 100%;
 	position: relative;
 	z-index: 1;
-	contain: layout style paint;
+	contain: layout paint;
 	overflow: hidden;
 }
 

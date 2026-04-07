@@ -26,7 +26,11 @@ function PixelBackground() {
 
 	useEffect(() => {
 		if (!canvasRef.current) return;
-		return initPixelCanvas(canvasRef.current);
+		try {
+			return initPixelCanvas(canvasRef.current);
+		} catch (e) {
+			console.warn("Pixel canvas init failed:", e);
+		}
 	}, []);
 
 	return <canvas ref={canvasRef} className="pixel-bg" />;
