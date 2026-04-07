@@ -418,6 +418,16 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	let rows = 0;
 	let haloData: Uint8Array = new Uint8Array(0);
 	const HALO = 5;
+	let cachedRects: Rect[] = [];
+	let haloStale = true;
+
+	// Only recompute halo when DOM actually changes, debounced
+	let mutationTimer = 0;
+	const observer = new MutationObserver(() => {
+		clearTimeout(mutationTimer);
+		mutationTimer = window.setTimeout(() => { haloStale = true; }, 150);
+	});
+	observer.observe(document.getElementById("root")!, { childList: true, subtree: true, characterData: true });
 
 	type Rect = { c0: number; r0: number; c1: number; r1: number };
 
@@ -465,32 +475,39 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	}
 
 	function buildHaloTexture(textRects: Rect[]) {
+		// Fast approach: mark cells near text rects by expanding each rect by HALO,
+		// then compute dim only for marked cells
 		for (let i = 0; i < cols * rows; i++) haloData[i] = 255;
 
 		// Black out the pixel column overlapping the sidebar border
 		const borderCol = getSidebarBorderCol();
 		if (borderCol >= 0 && borderCol < cols) {
-			for (let row = 0; row < rows; row++) {
-				haloData[row * cols + borderCol] = 0;
+			for (let r = 0; r < rows; r++) {
+				haloData[r * cols + borderCol] = 0;
 			}
 		}
 
-		for (let row = 0; row < rows; row++) {
-			for (let col = 0; col < cols; col++) {
-				let minDist = HALO + 1;
-				for (let ri = 0; ri < textRects.length; ri++) {
-					const tr = textRects[ri];
+		// For each text rect, only touch the cells within HALO distance
+		for (let ri = 0; ri < textRects.length; ri++) {
+			const tr = textRects[ri];
+			const r0 = Math.max(0, Math.floor(tr.r0 - HALO));
+			const r1 = Math.min(rows - 1, Math.ceil(tr.r1 + HALO));
+			const c0 = Math.max(0, Math.floor(tr.c0 - HALO));
+			const c1 = Math.min(cols - 1, Math.ceil(tr.c1 + HALO));
+			for (let row = r0; row <= r1; row++) {
+				for (let col = c0; col <= c1; col++) {
 					const dx = Math.max(tr.c0 - col, 0, col - tr.c1);
 					const dy = Math.max(tr.r0 - row, 0, row - tr.r1);
 					const d = Math.sqrt(dx * dx + dy * dy);
-					if (d < minDist) minDist = d;
-				}
-				if (minDist < HALO) {
-					const p = 1.0 - minDist / HALO;
-					const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
-					const sensitivity = 0.3 + noise * 0.7;
-					const dim = Math.max(0, 1.0 - (p * p) / (sensitivity * sensitivity));
-					haloData[row * cols + col] = Math.min(haloData[row * cols + col], (dim * 255) | 0);
+					if (d < HALO) {
+						const p = 1.0 - d / HALO;
+						const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
+						const sensitivity = 0.3 + noise * 0.7;
+						const dim = Math.max(0, 1.0 - (p * p) / (sensitivity * sensitivity));
+						const v = (dim * 255) | 0;
+						const idx = row * cols + col;
+						if (v < haloData[idx]) haloData[idx] = v;
+					}
 				}
 			}
 		}
@@ -508,12 +525,16 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		rows = Math.ceil(window.innerHeight / PX);
 		haloData = new Uint8Array(cols * rows);
 		gl.viewport(0, 0, canvas.width, canvas.height);
+		haloStale = true;
 	}
 
 	function draw(t: number) {
 		if (cols === 0 || rows === 0) { animId = requestAnimationFrame(draw); return; }
-		const textRects = updateTextRects();
-		buildHaloTexture(textRects);
+		if (haloStale) {
+			cachedRects = updateTextRects();
+			buildHaloTexture(cachedRects);
+			haloStale = false;
+		}
 		gl.uniform1f(uTime, t);
 		gl.uniform2f(uRes, canvas.width, canvas.height);
 		gl.uniform1f(uPx, PX * (window.devicePixelRatio || 1));
@@ -522,12 +543,17 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		animId = requestAnimationFrame(draw);
 	}
 
+	let scrollTimer = 0;
+	const markStale = () => { clearTimeout(scrollTimer); scrollTimer = window.setTimeout(() => { haloStale = true; }, 100); };
 	resize();
 	animId = requestAnimationFrame(draw);
 	window.addEventListener("resize", resize);
+	window.addEventListener("scroll", markStale, true); // capture phase for inner scrolls
 
 	return () => {
 		cancelAnimationFrame(animId);
 		window.removeEventListener("resize", resize);
+		window.removeEventListener("scroll", markStale, true);
+		observer.disconnect();
 	};
 }

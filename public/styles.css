@@ -528,6 +528,87 @@ html, body {
 	margin: 0;
 }
 
+.article-body h2 {
+	font-family: "Syne", sans-serif;
+	font-size: clamp(18px, 3vw, 24px);
+	font-weight: 700;
+	color: var(--light);
+	margin-top: 36px;
+	margin-bottom: 12px;
+	text-shadow: 0 0 16px rgba(106, 236, 120, 0.12);
+}
+
+.article-body h3 {
+	font-family: "Syne", sans-serif;
+	font-size: clamp(15px, 2.2vw, 19px);
+	font-weight: 600;
+	color: var(--light);
+	margin-top: 28px;
+	margin-bottom: 10px;
+}
+
+.article-body h4 {
+	font-family: "Syne", sans-serif;
+	font-size: clamp(14px, 1.8vw, 16px);
+	font-weight: 600;
+	color: var(--mist);
+	margin-top: 22px;
+	margin-bottom: 8px;
+}
+
+.article-body ul, .article-body ol {
+	margin-bottom: 16px;
+	padding-left: 24px;
+}
+
+.article-body li {
+	margin-bottom: 6px;
+}
+
+.article-body table {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 20px 0;
+	font-size: 0.9em;
+}
+
+.article-body th, .article-body td {
+	padding: 8px 12px;
+	text-align: left;
+	border-bottom: 1px solid rgba(45, 90, 54, 0.4);
+}
+
+.article-body th {
+	font-family: "Syne", sans-serif;
+	font-weight: 600;
+	color: var(--light);
+	border-bottom: 2px solid var(--sage);
+}
+
+.article-body td {
+	color: var(--mist);
+}
+
+.article-body code {
+	font-family: monospace;
+	font-size: 0.9em;
+	color: var(--glow);
+	background: rgba(106, 236, 120, 0.08);
+	padding: 1px 5px;
+	border-radius: 3px;
+}
+
+.article-body a {
+	color: var(--gold);
+	text-decoration: none;
+	border-bottom: 1px solid rgba(226, 184, 74, 0.3);
+	transition: border-color 0.15s;
+}
+
+.article-body a:hover {
+	border-color: var(--gold);
+}
+
 /* ---- Mobile tabs ---- */
 .mobile-tabs {
 	display: none;

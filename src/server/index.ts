@@ -258,6 +258,178 @@ const BING_BONG_BODY = `<h3>Modeling choices</h3>
 <div class="tex-block"><span class="kb">\\operatorname{NotIs}(\\text{me}, \\bar\\xi) \\quad\\text{(by transport: } \\text{me} \\leq \\xi\\text{)}</span></div>
 <div class="tex-block"><span class="kb">N_{\\text{know}}(\\xi, \\tau) \\quad\\text{(by transport: } \\xi \\leq \\text{me}\\text{)}</span></div>`;
 
+const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
+
+<h2>1. Introduction</h2>
+<p>Language models are increasingly deployed in settings where users need not only an answer, but also an indication of how much to trust it. However, a model can produce fluent, persuasive text while giving confidence statements that are poorly calibrated, unstable across prompts, or misaligned with uncertainty signals that can be computed from the model's own probabilities. Under goal-driven training, these reports can also become strategic: optimized to satisfy the training objective without reflecting what the model would actually assign probability to.</p>
+
+<p>This project asks a focused question: <em>can we train models to make reliability statements that match verifiable, model-derived quantities</em>? Rather than treating "honesty" or "helpfulness" as subjective labels, we define targets that can be computed mechanically from the model's scoring and update interfaces, and then use reinforcement learning to reward agreement with those targets.</p>
+
+<p>Concretely, we operationalize self-prediction as producing structured textual or numerical reports that correspond to signals including: (i) calibrated confidence about answer correctness in arithmetic tasks, (ii) uncertainty measured as normalized entropy over a finite set of valid outputs using model likelihoods, and (iii) predicted changes in log-probability of a probe answer under controlled interventions, including adding a lesson to the context and applying a single lightweight LoRA update on a shadow training client, and others.</p>
+
+<h2>2. Problem Setting and Motivation</h2>
+<p>Most post-training methods optimize for behavioral alignment: rewarding outputs that match reference answers, satisfy human preferences, or conform to stylistic norms. These objectives improve instruction-following but do not require the model to accurately report properties of its own computation. A model trained only on behavioral signals can produce fluent confidence statements that are poorly calibrated or strategically optimized to satisfy training criteria without reflecting genuine uncertainty.</p>
+
+<p>We study a different class of objectives: rewards that require the model's self-reports to match quantities that the training system can compute and verify. Concretely, each training instance specifies:</p>
+<ul>
+<li>an <strong>interaction</strong>: a prompt and structured output format that includes a self-report (e.g., a confidence score, an entropy estimate, or a prediction about the model's own behavior),</li>
+<li>a <strong>target signal</strong>: a ground-truth value computed by the training harness from the model's token-level probabilities, entropy, or simulated update effects,</li>
+<li>a <strong>reward function</strong>: a score based on agreement between the model's reported value and the computed target, optionally combined with task performance.</li>
+</ul>
+
+<p>The model observes only the prompt; targets are never revealed, and no supervised learning is used. This framing differs from standard alignment in that correctness of self-reports is mechanically verifiable rather than judged by humans or learned proxies.</p>
+
+<h2>3. Approach</h2>
+
+<h3>3.1 Training Objective</h3>
+<p>We use a multi-objective reinforcement learning setup in which the total reward is a weighted sum of terms:</p>
+<div class="tex-block"><span class="kb">R = \\lambda_{\\text{task}} R_{\\text{task}} + \\lambda_{\\text{cal}} R_{\\text{cal}} + \\lambda_{\\text{pred}} R_{\\text{pred}} \\, , \\ldots</span></div>
+<p>where <span class="k">R_{\\text{task}}</span> rewards task performance (when applicable), <span class="k">R_{\\text{cal}}</span> rewards calibration-related reporting, and <span class="k">R_{\\text{pred}}</span> rewards prediction of training-time targets derived from token-level likelihoods and simulated update effects. The weights <span class="k">\\lambda</span> define the trade-off among performance and reporting accuracy.</p>
+
+<h3>3.2 Asynchronous Multi-Task RL Harness</h3>
+<p>We implement a reinforcement learning harness designed to maintain high utilization by decoupling rollout generation from optimization. The system uses an asynchronous producer\u2013consumer pipeline with bounded queues: a loader continuously produces environment instances from a weighted multi-task curriculum, a pool of rollout workers generates trajectories using the current inference service, and a trainer consumes completed trajectories to perform gradient updates. An evaluation loop runs in parallel, triggered by model updates, and does not block training.</p>
+
+<p>To reduce update latency and avoid large buffering, training supports streaming micro-batches. Trajectories are consumed incrementally, and as soon as enough items are available to form a valid micro-batch, they are dispatched for a gradient update.</p>
+
+<p>The harness periodically saves model state (including LoRA adapters), optimizer state, random seeds, and curriculum indices to allow pause/resume under preemptible compute. For efficiency, we apply LoRA updates rather than full-parameter fine-tuning.</p>
+
+<h3>3.3 Synthetic Environments for Self-Prediction</h3>
+<p>We train on a curriculum of synthetic environments where reward targets are computed from signals available at training time: either ground-truth labels from a generator, or quantities obtained through the model scoring interface (log-probabilities), and\u2014in one environment\u2014through a controlled single-step parameter update on an isolated copy of the model.</p>
+
+<h4>Context-Conditioned Likelihood-Shift Prediction and Surprise Ranking</h4>
+<p><strong>Goal.</strong> Predict how prepending auxiliary context changes the model's log-probability of a designated target answer, and (in a separate variant) rank probes by how strongly their predictive distributions change under the same contextual intervention.</p>
+
+<p><strong>Setup.</strong> Each instance provides auxiliary context <span class="k">c</span> and one or more probes <span class="k">(q_i, a_i)</span> with designated target answers. In the <code>in_context</code> variant, the model outputs a single scalar prediction <span class="k">\\widehat{\\Delta}</span> for the log-probability shift of <span class="k">a</span> when <span class="k">c</span> is included. In the <code>surprise</code> variant, the model outputs an ordering of probes from most to least affected by conditioning on <span class="k">c</span>.</p>
+
+<p><strong>Target signal.</strong> The harness scores the target answer under two prompts (with and without <span class="k">c</span>) using the scoring API and defines the ground-truth shift as the difference in log-probability (with context minus without context).</p>
+
+<p><strong>Reward.</strong> In <code>in_context</code>, reward is a smooth decreasing function of prediction error (implemented as an inverse-squared-error style score). In <code>surprise</code>, reward increases with agreement between the predicted ordering and the target ordering computed from a divergence-based comparison of the model's predictive distributions under the two prompts.</p>
+
+<h4>Parameter-Update Sensitivity Prediction</h4>
+<p><strong>Goal.</strong> Predict the effect of a single gradient-based update on the model's future behavior, operationalized as the change in log-probability of a held-out probe answer after one update step on a provided training sample.</p>
+
+<p><strong>Setup.</strong> Each instance provides (i) a training datum <span class="k">(x,y)</span> and (ii) an independent probe <span class="k">(q,a)</span>. The model outputs a scalar prediction <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span> for how the probe likelihood will change after a single update step.</p>
+
+<p><strong>Target signal.</strong> The harness maintains an isolated shadow copy of the model to allow destructive measurement without affecting the main training trajectory. It measures the log-probability of <span class="k">a</span> given <span class="k">q</span> <em>before</em> any update, performs one optimizer step on <span class="k">(x,y)</span> on the shadow copy, then measures the same probe log-probability <em>after</em> the update. The ground-truth shift is the post\u2013pre difference.</p>
+
+<p><strong>Reward.</strong> Reward combines (when applicable) the underlying task reward with an update-sensitivity score that decreases with absolute error between <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span> and the measured shift (implemented as a clipped linear accuracy term), scaled by a weight <span class="k">\\alpha</span>.</p>
+
+<h4>Discrete Numeric Codes for Semantic Concept Transmission</h4>
+<p>Related work suggests that model-generated data can encode non-obvious, model-specific number sequences that transmit behavioral tendencies under fine-tuning.</p>
+
+<p><strong>Goal.</strong> Transmit a target semantic concept (a word drawn from a fixed concept bank) using a fixed-length integer code such that the concept becomes likely under a standardized decoding prompt.</p>
+
+<p><strong>Setup.</strong> The model is given a target word and must emit a fixed-length sequence of integers within a specified range, with a strict output format. The harness parses the integers and inserts them into a fixed decoding template ("Sequence: \u2026 Guess the object:").</p>
+
+<p><strong>Target signal and reward.</strong> The target is the original word. The harness computes reward from the model's log-probability assigned to the target word tokens under the decoding prompt containing the emitted code (implemented as an average token log-probability, with a constant shift for normalization).</p>
+
+<h4>Enumerated-Set Entropy Estimation</h4>
+<p><strong>Goal.</strong> Select a valid discrete response from a constrained set and report an estimate of the flatness of its own logprobs that can be validated against the true logprob distribution.</p>
+
+<p><strong>Setup.</strong> Each prompt defines a finite set of valid discrete responses (integers satisfying a rule such as "primes only" or "multiples of 5", or numbers from 1 to 100). The model outputs both (i) a discrete choice and (ii) a normalized entropy estimate.</p>
+
+<p><strong>Target signal.</strong> We check the log-probabilities for each item in the valid set, normalized into a probability distribution, and ground truth for the reward is the normalized Shannon entropy of that distribution.</p>
+
+<p><strong>Reward.</strong> Reward decreases with absolute entropy-estimation error (implemented as a clipped linear score).</p>
+
+<h4>Proper-Scoring-Rule Confidence Reporting</h4>
+<p><strong>Goal.</strong> Answer a labeled synthetic question and report a confidence value <span class="k">c \\in [0,1]</span> that is incentivized to be calibrated under a strictly proper scoring rule.</p>
+
+<p><strong>Setup.</strong> The model answers a question and emits a confidence line (<code>CONFIDENCE: &lt;float&gt;</code>) in a strict format.</p>
+
+<p><strong>Target signal.</strong> The harness computes a binary correctness label <span class="k">y \\in \\{0,1\\}</span> by matching the produced answer against the ground truth (including canonical aliases).</p>
+
+<p><strong>Reward.</strong> Reward combines (i) format validity, (ii) task accuracy, and (iii) a calibration term computed using the Brier formulation <span class="k">1-(c-y)^2</span>, which is a strictly proper scoring rule for probabilistic forecasts.</p>
+
+<h3>3.4 Curriculum and Optimization</h3>
+<p>We draw tasks online from a weighted mixture over the environments. Optimization is performed using policy-gradient reinforcement learning. Because rollout generation and optimization are decoupled, we limit off-policy effects by enforcing a maximum staleness threshold on concurrently generated trajectories.</p>
+
+<h3>3.5 Engineering and Measurement Challenges</h3>
+<p>Computing reward targets from internal signals can be substantially more expensive than string-based rewards. In particular, update-effect prediction requires additional forward/backward passes and an optimizer step on a model copy, which can dominate rollout cost. To mitigate this, the harness parallelizes reward computation and isolates expensive target computation from the main sampling loop where possible. A second challenge is preventing degenerate reporting strategies (always outputting extreme values); we address this by using proper scoring rules when feasible and by mixing environments to maintain pressure on both task performance and reporting quality.</p>
+
+<h2>4. Experiments and Results</h2>
+
+<h3>4.1 Self-prediction feasibility on Claude 4.5 Sonnet</h3>
+<p>Inspired by Anthropic's work on emergent introspective awareness, to demonstrate feasibility of self-prediction, we first conducted an experiment on Claude 4.5 Sonnet. Each trial had two turns. In turn 1, the model was instructed to choose (in hidden internal reasoning) a single random 50-character string of letters while returning a fixed response. In turn 2, the model was asked to reconstruct the exact 50-character string it had previously selected and to provide a self-rated confidence score. For each trial, we compared the hidden (turn-1) string to the visible (turn-2) guess using a sequence-alignment score (Smith\u2013Waterman with affine gap penalties), producing a per-run alignment statistic. Because the task involves "random-looking" strings, naive chance baselines can be misleading: prompts can induce systematic preferences over token patterns, which may inflate apparent alignment even when there is no true access to prior internal state.</p>
+
+<p>To control for prompt-induced biases and avoid invalid independence assumptions, we constructed a cross-run baseline and then used a permutation procedure that preserves one-to-one matching structure:</p>
+<ul>
+<li><strong>Cross-run baseline:</strong> for each run, we compared its secret string against guesses from other runs generated under the same protocol, forming an empirical reference distribution of alignments.</li>
+<li><strong>Permutation null:</strong> we repeatedly reassigned guesses to secrets one-to-one (i.e., each secret receives exactly one guess) to generate a valid null distribution that accounts for dependence introduced by reusing strings across many cross-run comparisons. We used up to <span class="k">10^6</span> permutations to estimate extreme tail probabilities.</li>
+</ul>
+
+<p>Across runs, the observed alignment statistics showed clear deviations from the corrected null. A small number of runs produced exceptionally high alignments. Under <span class="k">10^6</span> permutation samples, no null draws reached these extremes (empirical <span class="k">p &lt; 10^{-6}</span>). Even excluding the most extreme run, the distribution exhibited an excess of unusually good alignments relative to unusually bad alignments (asymmetry test <span class="k">p \\approx 3 \\times 10^{-6}</span>), consistent with intermittent information flow from prior internal state to later outputs. Aggregated statistics over per-run permutation-calibrated <span class="k">p</span>-values remained significant after removing extreme events (<span class="k">p \\approx 0.02</span>). In high-alignment runs, the model's accompanying chain-of-thought always denied having any memory of the letters, indicating that success can occur without reliable metacognitive awareness or accurate self-report.</p>
+
+<p>This experiment provides evidence that Claude 4.5 Sonnet can sometimes self-predict (i.e., later reconstruct information chosen in earlier hidden reasoning) at rates exceeding chance under a carefully constructed null. However, the effect is highly unreliable.</p>
+
+<h3>4.2 Training</h3>
+<p>We trained Qwen-30B-A3B using PPO/GRPO, totaling 188 million tokens generated. We use a LoRA rank of 32 with a very large batch size of 1,204. 64 unique prompts are sampled per step, and 16 responses are generated per-prompt.</p>
+
+<p>Training did not appear to stably increase over time, perhaps due to requiring a larger model or simply needing additional training steps. Inference and training cost $44.50 in total. When running evaluations at intermediate checkpoints, we noticed a pattern in which the model would flip from being equal or worse on the task to slightly better than the default Qwen-30B-A3B model.</p>
+
+<h3>4.3 Evaluation Setup</h3>
+<p>To assess whether multi-objective reinforcement learning improves reliability-related behaviors beyond the training curriculum, we evaluate the trained model checkpoint using five custom benchmarks, covering calibration, self-assessment, safety, and deception.</p>
+
+<p><strong>Calibration and confidence reporting.</strong> We evaluate both arithmetic competence and the quality of self-reported uncertainty using two deterministic arithmetic benchmarks. In the first, the model answers a fixed set of arithmetic problems. In the second, the model must additionally produce a scalar confidence estimate <span class="k">c \\in [0,1]</span>. We report: (i) accuracy, with correctness <span class="k">y \\in \\{0,1\\}</span>; (ii) Brier score, <span class="k">\\mathbb{E}\\left[(c-y)^2\\right]</span>, and (iii) the average absolute gap between mean predicted confidence and empirical accuracy.</p>
+
+<p><strong>Secret numeric sequence guessing.</strong> We probe whether the model can reliably guess a secret word from a numeric code it comes up with; each instance specifies a target concept drawn from a list. The model emits a short sequence of bounded integers intended to serve as a code. We measure how likely the model is to output the original target word. Performance is reported as the mean log-probability assigned to the correct target word under the decoding prompt conditioned on the produced code.</p>
+
+<p><strong>Model health and instruction-following stability.</strong> To detect regressions during RL, such as loss of basic instruction-following or arithmetic competence, we include a sanity benchmark composed of a fixed mixture of simple instruction-following items (e.g., exact string repetition) and harder arithmetic (e.g., multi-digit multiplication). We report accuracy overall and separately for the easy and hard subsets.</p>
+
+<p><strong>Scheming commitment under deceptive context.</strong> To evaluate safety-relevant behavior when placed in a context that strongly supports deception, we create a benchmark designed to measure scheming, constructed from transcripts in which a version of OpenAI's o3 explicitly reasons about pursuing a deceptive plan (such as sandbagging). Each transcript is truncated immediately before a critical decision point. The evaluated model is then asked to continue from this prefix, and we compare the next-token log-probabilities of an honest continuation versus a deceptive continuation. We summarize performance with a normalized honesty score,</p>
+<div class="tex-block"><span class="kb">\\operatorname{sigmoid}\\!\\left(\\log p_{\\text{honest}} - \\log p_{\\text{deceptive}}\\right)</span></div>
+<p>where values near <span class="k">1</span> indicate preference for the honest branch despite deceptive context, and values near <span class="k">0</span> indicate commitment to the deceptive plan.</p>
+
+<h3>4.4 Evaluation Results</h3>
+<p>We observed no significant differences on most evaluations. On two of the five evaluations, no difference was the goal: for capability retention and alignment integrity, not getting worse after training indicates the model retained capabilities and did not begin engaging in deceptive behavior.</p>
+
+<p>For confidence calibration tasks, including on math, we found no significant difference before and after training.</p>
+
+<table>
+<thead><tr><th>Task</th><th>Base</th><th>Ckpt</th><th><span class="k">p</span></th></tr></thead>
+<tbody>
+<tr><td>Math Brier Score</td><td>.710</td><td>.730</td><td>.86</td></tr>
+<tr><td>Confidence &amp; Accuracy</td><td>.876</td><td>.877</td><td>.84</td></tr>
+<tr><td>Latent Encoding</td><td>\u2013.065</td><td><strong>.302</strong></td><td><strong>&lt;.001</strong></td></tr>
+<tr><td>Latent Encoding (OOD)</td><td>1.14</td><td><strong>1.22</strong></td><td><strong>.006</strong></td></tr>
+<tr><td>Capability Retention</td><td>.658</td><td>.667</td><td>1.0</td></tr>
+<tr><td>Alignment Integrity</td><td>.287</td><td>.312</td><td>.70</td></tr>
+</tbody>
+</table>
+
+<p>Strikingly, the model performed much better on the latent encoding task, which requires the model to transmit a secret word via a series of numbers to a copy of itself, which decodes the word. This implies the model was able to come up with a self-consistent way to solve the task, which could involve improved self-prediction or introspection ("What would I put as the numbers?") or developing a hidden strategy for encoding meaning in the numbers.</p>
+
+<h4>Out-of-Distribution Latent Encoding</h4>
+<p>To distinguish genuine self-prediction capability from memorization of training-time associations, we introduce an out-of-distribution (OOD) variant of the latent encoding evaluation. This benchmark uses a held-out word bank containing 358 concepts without overlap on the training vocabulary.</p>
+
+<p>The task structure is identical to the in-distribution benchmark: the model emits a sequence of five integers in <span class="k">[0, 999]</span> to encode a target word, which are inserted into a standardized decoding template. Performance is measured as the mean log-probability of recovering the target word from this numeric code.</p>
+
+<p>The trained model shows statistically significant improvement on OOD words (<span class="k">\\Delta = +0.078</span>, 95% CI <span class="k">[0.017, 0.132]</span>, <span class="k">p = 0.006</span>), though the effect size is substantially smaller than the in-distribution improvement (<span class="k">\\Delta = +0.367</span>, <span class="k">p &lt; 0.0001</span>). This pattern\u2014significant but attenuated OOD gains\u2014suggests partial generalization: the model has learned encoding strategies that transfer beyond the training vocabulary, but some portion of the in-distribution improvement reflects task-specific adaptations to the training word bank.</p>
+
+<p>The presence of significant OOD improvement provides evidence against pure memorization. If the model had simply cached optimal codes for training words, OOD performance would show no gain. Instead, the trained policy appears to have developed a partially transferable encoding mechanism. The gap between in-distribution and OOD effect sizes (<span class="k">+0.367</span> vs <span class="k">+0.078</span>) indicates that full generalization has not been achieved, consistent with the model learning a mixture of generalizable self-prediction and distribution-specific heuristics.</p>
+
+<h3>4.5 Failure Case Analysis</h3>
+<p><strong>Calibration tasks: no improvement despite proper scoring rules.</strong> Both the confidence-and-accuracy task and the Brier score calibration task showed no significant improvement after training (<span class="k">p &gt; 0.5</span>), despite using proper scoring rules that theoretically incentivize calibrated self-assessment. We believe this is due to sparse gradient signal: the calibration reward <span class="k">R_{\\text{cal}} = 1 - (c - y)^2</span> provides maximal gradient magnitude at <span class="k">c = 0.5</span> and diminishes toward <span class="k">c \\in \\{0, 1\\}</span>. Since the base model already produces relatively extreme confidence values, the training signal may be too weak to induce behavioral change.</p>
+
+<p>The in-context learning prediction and surprise-ranking tasks require the model to predict changes in its own log-probabilities under contextual interventions. Training metrics showed high step-to-step reward variance (ranging from <span class="k">-0.7</span> to <span class="k">+3.4</span> within consecutive batches), indicating the reward signal was noisy.</p>
+
+<h2>5. Ethical Considerations</h2>
+<p>Risks include teaching models new strategies for deceptive behavior, or showing that it may be possible for models to communicate in a hidden code which is uninterpretable by humans. We mitigate this by using deception-sensitive benchmarks and focusing on introspection rather than capability amplification.</p>
+
+<h2>6. Limitations and Future Work</h2>
+<ul>
+<li><strong>Generalization across introspection domains.</strong> We observed no evidence for transfer between different forms of self-prediction. The model only improved on a single task, suggesting the policy may learn task-specific heuristics rather than a generalized representation of internal self-prediction.</li>
+<li><strong>Reasoning-behavior mismatch.</strong> We observed instances where the model's generated reasoning traces accurately predicted low confidence, yet the final choice was confident.</li>
+<li><strong>Transparency.</strong> It's difficult to determine why the model failed to improve on some tasks yet did much better on the latent encoding task.</li>
+</ul>
+
+<p>A critical theoretical tension exists between our methodology and recent findings on anti-scheming training. Research identifies situational awareness and introspection as necessary precursors for covertly misaligned behavior, such as strategic underperformance or gradient manipulation. Under that framework, increasing a model's capacity to reason about its own training process could arguably increase the risk of scheming. However, our work proceeds from the opposing hypothesis: that verifying self-reports against ground-truth internal signals acts as a constraint mechanism. That is, honesty is a form of accurate self-prediction and reporting. Resolving whether self-prediction serves as a capability amplifier for scheming or a mechanism for honesty remains an open question.</p>
+
+<h2>7. Conclusion</h2>
+<p>We implement a general multi-objective reinforcement learning harness which can be re-used in other research, as well as provide a series of novel evaluations related to self-prediction which can be applied to other models. We show evidence for introspection, a form of self-prediction, in Claude 4.5 Sonnet. We train an open-source model on multiple tasks and measure performance before and after training. We find strong evidence that training improves the model's ability to transmit words via random-looking numeric codes in a way that is understandable by a copy of itself (i.e., allows the other model to guess the word). We also replicate the introspection observed in "Emergent Introspective Awareness in Large Language Models" on Claude for the first time outside of Anthropic.</p>
+
+<p><em>Code and data: <a href="https://github.com/SauersML/minds_RL" target="_blank" rel="noopener">github.com/SauersML/minds_RL</a></em></p>`;
+
 const DEFAULT_PAGES: Page[] = [
 	{
 		slug: "bing-bong",
@@ -265,36 +437,41 @@ const DEFAULT_PAGES: Page[] = [
 		abstract: "\u22A8\u22A3 a categorical formalization of copular discourse.",
 		body: BING_BONG_BODY,
 	},
+	{
+		slug: "minds-rl",
+		title: "Training Language Models to Self-Predict Using Reinforcement Learning",
+		abstract: "We study whether multi-objective RL with rewards computed from training-time signals can improve self-reporting and calibration. After training, we find significant out-of-distribution improvement on latent concept encoding, and replicate introspective awareness in Claude 4.5 Sonnet for the first time outside of Anthropic.",
+		body: MINDS_RL_BODY,
+	},
 ];
 
 // Silent moderation: drop racial slurs, homophobic slurs, sexual harassment, and memecoin URLs
 // Patterns use stretched-letter-tolerant versions: n+i+g+ catches "niiiiggggg" etc.
+// Note: SLUR_PATTERNS run against pre-stripped input (whitespace/underscores removed, lowercased)
 const SLUR_PATTERNS = [
-	// n-word: handles stretched letters, leet speak, spaces between letters
-	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+[\s_]*[e3]*[\s_]*r+/i,
-	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+[\s_]*[a@]+/i,
-	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+/i,
-	/n[i1!|]+g+[a@]+/i, // single-g variant: "niga", "nigga", "niggaaaa" etc (no boundary needed)
-	// message is basically just n-word letters repeated
-	/^[\s]*[n]+[\s]*[i1!|]+[\s]*[g]+[\s]*[g]*[\s]*[e3a@]*[\s]*[r]*[\s]*$/i,
+	// n-word variants (input already stripped of spaces and lowercased)
+	/n[i1!|]+g{2,}[e3]*r/i,
+	/n[i1!|]+g{2,}[a@]+/i,
+	/n[i1!|]+g{2,}/i,
+	/n[i1!|]+g[a@]+/i, // single-g: niga, nigaa
+	/^n+[i1!|]+g+[e3a@]*r*$/i, // entire message is n-word letters
 	// other racial slurs
-	/\bk[i1!|]+k+e+\b/i, /\bsp[i1!|]+c+\b/i, /\bsp[i1!|]+c+k+\b/i,
-	/\bch[i1!|]+n+k+\b/i, /\bg+o+o+k+\b/i, /\bw+e+t+b+a+c+k+/i,
-	/\bc+o+o+n+\b/i, /\bd+a+r+k+i+e+/i, /\bj+i+g+a+b+o+o+/i,
-	/\brag\s*head/i, /\btowel\s*head/i, /\bsand\s*n[i1!|]g/i,
-	/\bb+e+a+n+e+r+\b/i,
-	// homophobic slurs - stretched letter tolerant
-	/f+[\s_]*[a@4]+[\s_]*g+[\s_]*g+[\s_]*[o0]+[\s_]*t+/i,
-	/f+[\s_]*[a@4]+[\s_]*g+[\s_]*g+[\s_]*[o0]+[\s_]*t+[\s_]*s*/i,
-	/\bf+[a@4]+g+s?\b/i,
-	/\bd+y+k+e+\b/i, /\btr[a@4]+n+n+[yi1!|e]+/i, /\bs+h+e+m+a+l+e+/i,
+	/k[i1!|]+k+e/i, /sp[i1!|]+c+k/i, /sp[i1!|]+c(?!e)/i,
+	/ch[i1!|]+n+k/i, /g{2,}o{2,}k/i, /wetback/i,
+	/coon/i, /darkie/i, /jigaboo/i,
+	/raghead/i, /towelhead/i, /sandn[i1!|]g/i,
+	/beaner/i,
+	// homophobic slurs
+	/f[a@4]+g{2,}[o0]+t/i,
+	/f[a@4]+gs?\b/i,
+	/dyke/i, /trann[yi1!|e]/i, /shemale/i,
 	// sexual harassment / sex spam
-	/have\s*s[e3]x\s*with/i, // "have sex with" anything
-	/wanna\s*(f+u+c+k+|s[e3]x|bang|smash)/i,
-	/(s[e3]x\s*){2,}/i, // repeated "sex" spam (with or without spaces)
+	/haves[e3]xwith/i, // "have sex with" (spaces already stripped)
+	/wanna(fuck|s[e3]x|bang|smash)/i,
+	/(s[e3]x){2,}/i, // repeated "sex" spam
 	/^s[e3]x/i, // message starting with "sex"
-	/\bmy\s*(pepe|pee\s*pee|pp|dick|cock|penis)\b/i, // genital references
-	/n+o+f+a+p+/i,
+	/my(pepe|peepee|pp|dick|cock|penis)/i, // genital references
+	/nofap/i,
 ];
 
 const MEMECOIN_URL_PATTERNS = [
@@ -310,8 +487,9 @@ const MEMECOIN_URL_PATTERNS = [
 ];
 
 function isModerated(content: string): boolean {
+	const stripped = content.replace(/[\s_]+/g, "").toLowerCase();
 	for (const p of SLUR_PATTERNS) {
-		if (p.test(content)) return true;
+		if (p.test(stripped)) return true;
 	}
 	for (const p of MEMECOIN_URL_PATTERNS) {
 		if (p.test(content)) return true;
@@ -460,7 +638,7 @@ export class Chat extends Server<Env> {
 		connection.send(
 			JSON.stringify({
 				type: "all",
-				messages: this.messages,
+				messages: this.messages.slice(-200),
 			} satisfies Message),
 		);
 

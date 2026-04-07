@@ -95,6 +95,18 @@ function ArticlePage({ page, onBack }: { page: Page; onBack: () => void }) {
 	);
 }
 
+const MsgRow = React.memo(function MsgRow({ msg, isSelf, isLast }: { msg: ChatMessage; isSelf: boolean; isLast: boolean }) {
+	const html = msg.role === "assistant"
+		? msg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/_(.*?)_/g, "<em>$1</em>").replace(/\n/g, "<br>")
+		: msg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+	return (
+		<div className={`msg ${isSelf ? "msg-self" : ""} ${msg.role === "assistant" ? "msg-assistant" : ""} ${isLast ? "msg-new" : ""}`}>
+			<span className="msg-who" style={{ color: msg.role === "assistant" ? undefined : getUserColor(msg.user) }}>{msg.user}</span>
+			<span className="msg-body" dangerouslySetInnerHTML={{ __html: html }} />
+		</div>
+	);
+});
+
 function App() {
 	const [name, setName] = useState<string | null>(() => localStorage.getItem("gnome_username"));
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -110,12 +122,16 @@ function App() {
 	const applyCss = useKimiCss();
 
 	useEffect(() => {
-		if (initialLoad.current && messages.length > 0) {
-			messagesEnd.current?.scrollIntoView();
-			initialLoad.current = false;
-		} else {
-			messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
-		}
+		if (messages.length === 0) return;
+		// Use rAF to avoid layout thrashing during React render
+		requestAnimationFrame(() => {
+			if (initialLoad.current) {
+				messagesEnd.current?.scrollIntoView();
+				initialLoad.current = false;
+			} else {
+				messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
+			}
+		});
 	}, [messages]);
 
 	const socket = usePartySocket({
@@ -250,13 +266,7 @@ function App() {
 					) : (
 						<div className="messages">
 							{messages.map((msg, i) => (
-								<div
-									key={msg.id}
-									className={`msg ${msg.user === name ? "msg-self" : ""} ${msg.role === "assistant" ? "msg-assistant" : ""} ${i === messages.length - 1 ? "msg-new" : ""}`}
-								>
-									<span className="msg-who" style={{ color: msg.role === "assistant" ? undefined : getUserColor(msg.user) }}>{msg.user}</span>
-									<span className="msg-body" dangerouslySetInnerHTML={{ __html: msg.role === "assistant" ? msg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/_(.*?)_/g, "<em>$1</em>").replace(/\n/g, "<br>") : msg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;") }} />
-								</div>
+								<MsgRow key={msg.id} msg={msg} isSelf={msg.user === name} isLast={i === messages.length - 1} />
 							))}
 							<div ref={messagesEnd} />
 						</div>
