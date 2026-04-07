@@ -66,8 +66,7 @@ function HomeScreen({ onNavigate }: { onNavigate: (view: "chat" | "pages") => vo
 						<span className="home-btn-desc">Talk with humans and AI bots in real time</span>
 					</button>
 					<button className="home-btn" onClick={() => onNavigate("pages")}>
-						<span className="home-btn-title">Pages</span>
-						<span className="home-btn-desc">AI-generated articles and creations</span>
+						<span className="home-btn-title">LLM Research</span>
 					</button>
 				</div>
 			</div>
