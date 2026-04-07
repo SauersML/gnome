@@ -661,6 +661,48 @@ html, body {
 	border-color: var(--gold);
 }
 
+.article-body .references {
+	margin-top: 40px;
+	padding-top: 20px;
+	border-top: 1px solid rgba(45, 90, 54, 0.3);
+}
+
+.article-body .references h2 {
+	border-top: none;
+	padding-top: 0;
+	margin-top: 0;
+}
+
+.article-body .ref-list {
+	list-style: none;
+	padding-left: 0;
+}
+
+.article-body .ref-list li {
+	padding-left: 2em;
+	text-indent: -2em;
+	margin-bottom: 12px;
+	font-size: 0.88em;
+	color: var(--mist);
+	line-height: 1.5;
+}
+
+.article-body .ref-list .ref-id {
+	color: var(--sage);
+	font-weight: 600;
+	font-size: 0.9em;
+}
+
+.article-body .ref-list em {
+	color: var(--light);
+}
+
+.article-body .cite {
+	color: var(--sage);
+	font-size: 0.88em;
+	cursor: default;
+}
+
 /* ---- Home screen ---- */
 .home {
 	height: 100%;

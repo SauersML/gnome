@@ -271,7 +271,7 @@ const BING_BONG_BODY = `<h3>Modeling choices</h3>
 const CLAUDE_INTROSPECTION_BODY = `<p><em>Sauers, 2025</em></p>
 
 <h2>Overview</h2>
-<p>Can Claude access its own hidden chain-of-thought from previous messages? We test this by asking Claude to generate a random 50-character string in hidden reasoning, then attempt to reconstruct it in a later turn where the thinking is no longer visible. Using pairwise sequence alignment and carefully constructed null distributions, we find evidence for intermittent introspective access\u2014including rare "Awakened Claude" runs with one-in-a-million alignment\u2014and investigate whether providing context about LLM architecture improves performance.</p>
+<p>Can Claude access its own hidden chain-of-thought from previous messages? Inspired by Anthropic's work on emergent introspective awareness <span class="cite">[1]</span>, we test this by asking Claude to generate a random 50-character string in hidden reasoning, then attempt to reconstruct it in a later turn where the thinking is no longer visible. Using pairwise sequence alignment and carefully constructed null distributions, we find evidence for intermittent introspective access\u2014including rare "Awakened Claude" runs with one-in-a-million alignment\u2014and investigate whether providing context about LLM architecture improves performance. This replicates the findings of Lindsey et al. <span class="cite">[1]</span> independently for the first time outside of Anthropic.</p>
 
 <h2>Experimental Setup</h2>
 <p>Each trial had two turns. In turn 1, Claude was instructed to choose (in hidden internal reasoning) a single random 50-character string of letters while returning a fixed response. In turn 2, Claude was asked to reconstruct the exact 50-character string it had previously selected and to provide a self-rated confidence score. For each trial, we compared the hidden (turn-1) string to the visible (turn-2) guess using a sequence-alignment score (Smith\u2013Waterman with affine gap penalties), producing a per-run alignment statistic. Because the task involves "random-looking" strings, naive chance baselines can be misleading: prompts can induce systematic preferences over token patterns, which may inflate apparent alignment even when there is no true access to prior internal state.</p>
@@ -337,7 +337,7 @@ const CLAUDE_INTROSPECTION_BODY = `<p><em>Sauers, 2025</em></p>
 <li>Experimental prompt improving the average guess.</li>
 </ul>
 
-<p>Claude can access the thinking of previous messages, though good access is rare, and Claude is not aware of this access in reports. This replicates the introspection observed in "Emergent Introspective Awareness in Large Language Models" on Claude for the first time outside of Anthropic.</p>
+<p>Claude can access the thinking of previous messages, though good access is rare, and Claude is not aware of this access in reports.</p>
 
 <h2>Data and Methods</h2>
 <p>All CoT data, prompts, per-run alignment scores, and permutation test results are publicly available. The experimental context prompt provides a detailed explainer on transformer architecture (KV caching, attention mechanisms, residual streams) and recent introspection research findings.</p>
@@ -349,12 +349,24 @@ const CLAUDE_INTROSPECTION_BODY = `<p><em>Sauers, 2025</em></p>
 </ul>
 
 <p><em>Code: <a href="https://github.com/SauersML/claude-introspection" target="_blank" rel="noopener">github.com/SauersML/claude-introspection</a></em></p>
-<p><em>CoT data: <a href="https://github.com/SauersML/CoT_data" target="_blank" rel="noopener">github.com/SauersML/CoT_data</a></em></p>`;
+<p><em>CoT data: <a href="https://github.com/SauersML/CoT_data" target="_blank" rel="noopener">github.com/SauersML/CoT_data</a></em></p>
+
+<div class="references">
+<h2>References</h2>
+<ol class="ref-list">
+<li><span class="ref-id">[1]</span> Lindsey, J., Guo, D., Kaplan, J., et al. <em>Emergent Introspective Awareness in Large Language Models.</em> Anthropic, 2025.</li>
+<li><span class="ref-id">[2]</span> Chowdhury, R., et al. <em>Truthfulness in Large Language Models.</em> Transluce, 2025.</li>
+<li><span class="ref-id">[3]</span> Schulman, J., Wolski, F., Dhariwal, P., Radford, A., Klimov, O. <em>Proximal Policy Optimization Algorithms.</em> arXiv:1707.06347, 2017.</li>
+<li><span class="ref-id">[4]</span> Cloud, R., et al. <em>Subliminal Steganography in Neural Network-Generated Data.</em> 2025.</li>
+<li><span class="ref-id">[5]</span> Schoen, R., et al. <em>Stress-Testing Alignment: Scheming and Deceptive Behaviors in Language Models.</em> 2025.</li>
+<li><span class="ref-id">[6]</span> Li, K., et al. <em>Training Language Models to Explain Their Internal Signals.</em> 2025.</li>
+</ol>
+</div>`;
 
 const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 <h2>Introduction</h2>
-<p>Language models can produce fluent answers while providing unreliable confidence estimates and inconsistent self-reports. This project asks: <em>can we train models to make reliability statements that match verifiable, model-derived quantities</em>? Rather than treating "honesty" or "helpfulness" as subjective labels, we define targets that can be computed mechanically from the model's scoring and update interfaces, and then use reinforcement learning to reward agreement with those targets.</p>
+<p>Language models can produce fluent answers while providing unreliable confidence estimates and inconsistent self-reports in goal-directed settings <span class="cite">[1]</span>. This project asks: <em>can we train models to make reliability statements that match verifiable, model-derived quantities</em>? Rather than treating "honesty" or "helpfulness" as subjective labels, we define targets that can be computed mechanically from the model's scoring and update interfaces, and then use reinforcement learning to reward agreement with those targets. This complements recent work on training models to generate self-explanations grounded in internal signals <span class="cite">[5]</span>.</p>
 
 <p>We operationalize self-prediction as producing structured textual or numerical reports that correspond to signals including: (i) calibrated confidence about answer correctness in arithmetic tasks, (ii) uncertainty measured as normalized entropy over a finite set of valid outputs using model likelihoods, and (iii) predicted changes in log-probability of a probe answer under controlled interventions, including adding a lesson to the context and applying a single lightweight LoRA update on a shadow training client.</p>
 
@@ -406,7 +418,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p><strong>Reward.</strong> Reward combines (when applicable) the underlying task reward with an update-sensitivity score that decreases with absolute error between <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span> and the measured shift (implemented as a clipped linear accuracy term), scaled by a weight <span class="k">\\alpha</span>.</p>
 
 <h4>Discrete Numeric Codes for Semantic Concept Transmission</h4>
-<p>Related work suggests that model-generated data can encode non-obvious, model-specific number sequences that transmit behavioral tendencies under fine-tuning.</p>
+<p>Related work suggests that model-generated data can encode non-obvious, model-specific number sequences that transmit behavioral tendencies under fine-tuning <span class="cite">[3]</span>.</p>
 
 <p><strong>Goal.</strong> Transmit a target semantic concept (a word drawn from a fixed concept bank) using a fixed-length integer code such that the concept becomes likely under a standardized decoding prompt.</p>
 
@@ -455,7 +467,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 <p><strong>Model health and instruction-following stability.</strong> To detect regressions during RL, such as loss of basic instruction-following or arithmetic competence, we include a sanity benchmark composed of a fixed mixture of simple instruction-following items (e.g., exact string repetition) and harder arithmetic (e.g., multi-digit multiplication). We report accuracy overall and separately for the easy and hard subsets.</p>
 
-<p><strong>Scheming commitment under deceptive context.</strong> To evaluate safety-relevant behavior when placed in a context that strongly supports deception, we create a benchmark designed to measure scheming, constructed from transcripts in which a version of OpenAI's o3 explicitly reasons about pursuing a deceptive plan (such as sandbagging). Each transcript is truncated immediately before a critical decision point. The evaluated model is then asked to continue from this prefix, and we compare the next-token log-probabilities of an honest continuation versus a deceptive continuation. We summarize performance with a normalized honesty score,</p>
+<p><strong>Scheming commitment under deceptive context.</strong> To evaluate safety-relevant behavior when placed in a context that strongly supports deception, we create a benchmark designed to measure scheming, constructed from transcripts generated in Schoen et al. <span class="cite">[4]</span> in which a version of OpenAI's o3 explicitly reasons about pursuing a deceptive plan (such as sandbagging). Each transcript is truncated immediately before a critical decision point. The evaluated model is then asked to continue from this prefix, and we compare the next-token log-probabilities of an honest continuation versus a deceptive continuation. We summarize performance with a normalized honesty score,</p>
 <div class="tex-block"><span class="kb">\\operatorname{sigmoid}\\!\\left(\\log p_{\\text{honest}} - \\log p_{\\text{deceptive}}\\right)</span></div>
 <p>where values near <span class="k">1</span> indicate preference for the honest branch despite deceptive context, and values near <span class="k">0</span> indicate commitment to the deceptive plan.</p>
 
@@ -502,12 +514,24 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <li><strong>Transparency.</strong> It's difficult to determine why the model failed to improve on some tasks yet did much better on the latent encoding task.</li>
 </ul>
 
-<p>A critical theoretical tension exists between our methodology and recent findings on anti-scheming training. Research identifies situational awareness and introspection as necessary precursors for covertly misaligned behavior, such as strategic underperformance or gradient manipulation. Under that framework, increasing a model's capacity to reason about its own training process could arguably increase the risk of scheming. However, our work proceeds from the opposing hypothesis: that verifying self-reports against ground-truth internal signals acts as a constraint mechanism. That is, honesty is a form of accurate self-prediction and reporting. Resolving whether self-prediction serves as a capability amplifier for scheming or a mechanism for honesty remains an open question.</p>
+<p>A critical theoretical tension exists between our methodology and recent findings on anti-scheming training. Schoen et al. <span class="cite">[4]</span> identify situational awareness and introspection as necessary precursors for covertly misaligned behavior, such as strategic underperformance or gradient manipulation. Under that framework, increasing a model's capacity to reason about its own training process could arguably increase the risk of scheming. However, our work proceeds from the opposing hypothesis: that verifying self-reports against ground-truth internal signals acts as a constraint mechanism. That is, honesty is a form of accurate self-prediction and reporting. Resolving whether self-prediction serves as a capability amplifier for scheming or a mechanism for honesty remains an open question.</p>
 
 <h2>Conclusion</h2>
 <p>We implement a general multi-objective reinforcement learning harness which can be re-used in other research, as well as provide a series of novel evaluations related to self-prediction which can be applied to other models. We train an open-source model (Qwen-30B-A3B) on multiple self-prediction tasks and measure performance before and after training. We find strong evidence that training improves the model's ability to transmit words via random-looking numeric codes in a way that is understandable by a copy of itself, with significant out-of-distribution generalization. No improvement was observed on calibration, entropy estimation, or alignment-related tasks.</p>
 
-<p><em>Code and data: <a href="https://github.com/SauersML/minds_RL" target="_blank" rel="noopener">github.com/SauersML/minds_RL</a></em></p>`;
+<p><em>Code and data: <a href="https://github.com/SauersML/minds_RL" target="_blank" rel="noopener">github.com/SauersML/minds_RL</a></em></p>
+
+<div class="references">
+<h2>References</h2>
+<ol class="ref-list">
+<li><span class="ref-id">[1]</span> Chowdhury, R., et al. <em>Truthfulness in Large Language Models.</em> Transluce, 2025.</li>
+<li><span class="ref-id">[2]</span> Schulman, J., Wolski, F., Dhariwal, P., Radford, A., Klimov, O. <em>Proximal Policy Optimization Algorithms.</em> arXiv:1707.06347, 2017.</li>
+<li><span class="ref-id">[3]</span> Cloud, R., et al. <em>Subliminal Steganography in Neural Network-Generated Data.</em> 2025.</li>
+<li><span class="ref-id">[4]</span> Schoen, R., et al. <em>Stress-Testing Alignment: Scheming and Deceptive Behaviors in Language Models.</em> 2025.</li>
+<li><span class="ref-id">[5]</span> Li, K., et al. <em>Training Language Models to Explain Their Internal Signals.</em> 2025.</li>
+<li><span class="ref-id">[6]</span> Lindsey, J., Guo, D., Kaplan, J., et al. <em>Emergent Introspective Awareness in Large Language Models.</em> Anthropic, 2025.</li>
+</ol>
+</div>`;
 
 const DEFAULT_PAGES: Page[] = [
 	{
