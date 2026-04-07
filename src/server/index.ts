@@ -348,8 +348,8 @@ const CLAUDE_INTROSPECTION_BODY = `<p><em>Sauers, 2025</em></p>
 <li><strong>Null construction:</strong> Up to <span class="k">10^6</span> permutations with one-to-one secret\u2013guess reassignment</li>
 </ul>
 
-<p><em>CoT data and analysis: <a href="https://github.com/SauersML/CoT_data" target="_blank" rel="noopener">github.com/SauersML/CoT_data</a></em></p>
-<p><em>Full paper and code: <a href="https://github.com/SauersML/minds_RL" target="_blank" rel="noopener">github.com/SauersML/minds_RL</a></em></p>`;
+<p><em>Code: <a href="https://github.com/SauersML/claude-introspection" target="_blank" rel="noopener">github.com/SauersML/claude-introspection</a></em></p>
+<p><em>CoT data: <a href="https://github.com/SauersML/CoT_data" target="_blank" rel="noopener">github.com/SauersML/CoT_data</a></em></p>`;
 
 const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
