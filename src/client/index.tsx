@@ -1,6 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { usePartySocket } from "partysocket/react";
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { nanoid } from "nanoid";
 import { type ChatMessage, type Message, type Page } from "../shared";
 import { initPixelCanvas } from "./pixels";
@@ -9,16 +9,8 @@ import DOMPurify from "dompurify";
 declare const katex: { renderToString: (tex: string, opts?: Record<string, unknown>) => string };
 
 const USERNAME_COLORS = [
-	"#e2b84a", // gold (default)
-	"#6aec78", // green
-	"#ec6a8b", // rose
-	"#6ab8ec", // sky
-	"#c46aec", // purple
-	"#ec9f6a", // orange
-	"#6aecd4", // teal
-	"#ecdb6a", // yellow
-	"#8b9fec", // periwinkle
-	"#ec6a6a", // coral
+	"#e2b84a", "#6aec78", "#ec6a8b", "#6ab8ec", "#c46aec",
+	"#ec9f6a", "#6aecd4", "#ecdb6a", "#8b9fec", "#ec6a6a",
 ];
 
 function getUserColor(username: string): string {
@@ -27,24 +19,6 @@ function getUserColor(username: string): string {
 		hash = ((hash << 5) - hash + username.charCodeAt(i)) | 0;
 	}
 	return USERNAME_COLORS[Math.abs(hash) % USERNAME_COLORS.length];
-}
-
-function useKimiCss() {
-	const styleRef = useRef<HTMLStyleElement | null>(null);
-
-	useEffect(() => {
-		const style = document.createElement("style");
-		style.id = "kimi-css";
-		document.head.appendChild(style);
-		styleRef.current = style;
-		return () => { style.remove(); };
-	}, []);
-
-	return (css: string) => {
-		if (styleRef.current) {
-			styleRef.current.textContent = css;
-		}
-	};
 }
 
 function PixelBackground() {
@@ -59,8 +33,8 @@ function PixelBackground() {
 }
 
 const PURIFY_CONFIG = {
-	ALLOWED_TAGS: ["p", "div", "span", "em", "strong", "b", "i", "br", "ul", "ol", "li", "h1", "h2", "h3", "h4", "a", "code", "pre", "blockquote", "sub", "sup", "hr", "table", "thead", "tbody", "tr", "th", "td"],
-	ALLOWED_ATTR: ["class", "href", "target", "rel"],
+	ALLOWED_TAGS: ["p", "div", "span", "em", "strong", "b", "i", "br", "ul", "ol", "li", "h1", "h2", "h3", "h4", "a", "code", "pre", "blockquote", "sub", "sup", "hr", "table", "thead", "tbody", "tr", "th", "td", "img"],
+	ALLOWED_ATTR: ["class", "href", "target", "rel", "src", "alt", "loading"],
 };
 
 function sanitize(html: string): string {
@@ -75,6 +49,33 @@ function renderKatex(container: HTMLElement) {
 		el.classList.remove("k", "kb");
 	});
 }
+
+// ---- Home screen ----
+
+function HomeScreen({ onNavigate }: { onNavigate: (view: "chat" | "pages") => void }) {
+	return (
+		<>
+			<PixelBackground />
+			<div className="home">
+				<div className="home-brand">
+					gnome<span className="dot">.</span>science
+				</div>
+				<div className="home-nav">
+					<button className="home-btn" onClick={() => onNavigate("chat")}>
+						<span className="home-btn-title">Global LLM Chat</span>
+						<span className="home-btn-desc">Talk with humans and AI bots in real time</span>
+					</button>
+					<button className="home-btn" onClick={() => onNavigate("pages")}>
+						<span className="home-btn-title">Pages</span>
+						<span className="home-btn-desc">AI-generated articles and creations</span>
+					</button>
+				</div>
+			</div>
+		</>
+	);
+}
+
+// ---- Article page ----
 
 function ArticlePage({ page, onBack }: { page: Page; onBack: () => void }) {
 	const bodyRef = useRef<HTMLDivElement>(null);
@@ -95,6 +96,47 @@ function ArticlePage({ page, onBack }: { page: Page; onBack: () => void }) {
 	);
 }
 
+// ---- Pages browser ----
+
+function PagesView({ pages, onBack }: { pages: Page[]; onBack: () => void }) {
+	const [activePage, setActivePage] = useState<Page | null>(null);
+
+	if (activePage) {
+		return (
+			<>
+				<PixelBackground />
+				<ArticlePage page={activePage} onBack={() => setActivePage(null)} />
+			</>
+		);
+	}
+
+	return (
+		<>
+			<PixelBackground />
+			<div className="pages-view">
+				<header className="header">
+					<button className="nav-back" onClick={onBack}>&larr;</button>
+					<div className="brand">
+						gnome<span className="dot">.</span>science
+					</div>
+				</header>
+				<div className="pages-list">
+					<div className="sidebar-label">Pages</div>
+					{pages.map((p) => (
+						<button key={p.slug} className="sidebar-item" onClick={() => setActivePage(p)}>
+							<span className="sidebar-item-title">{p.title}</span>
+							<span className="sidebar-item-desc">{p.abstract}</span>
+						</button>
+					))}
+					{pages.length === 0 && <div className="empty-text">No pages yet.</div>}
+				</div>
+			</div>
+		</>
+	);
+}
+
+// ---- Chat message row ----
+
 const MsgRow = React.memo(function MsgRow({ msg, isSelf, isLast }: { msg: ChatMessage; isSelf: boolean; isLast: boolean }) {
 	const html = msg.role === "assistant"
 		? msg.content.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/_(.*?)_/g, "<em>$1</em>").replace(/\n/g, "<br>")
@@ -107,23 +149,54 @@ const MsgRow = React.memo(function MsgRow({ msg, isSelf, isLast }: { msg: ChatMe
 	);
 });
 
-function App() {
+// ---- Chat view ----
+
+function ChatView({ onBack }: { onBack: () => void }) {
 	const [name, setName] = useState<string | null>(() => localStorage.getItem("gnome_username"));
 	const [messages, setMessages] = useState<ChatMessage[]>([]);
-	const [pages, setPages] = useState<Page[]>([]);
-	const [activePage, setActivePage] = useState<Page | null>(null);
-	const [mobileTab, setMobileTab] = useState<"chat" | "pages">("chat");
 	const [pendingMessage, setPendingMessage] = useState<string | null>(null);
 	const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
 	const [visitorCount, setVisitorCount] = useState(0);
 	const messagesEnd = useRef<HTMLDivElement>(null);
 	const typingTimeout = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 	const initialLoad = useRef(true);
-	const applyCss = useKimiCss();
+	const chatContainerRef = useRef<HTMLDivElement>(null);
+	const kimiStyleRef = useRef<HTMLStyleElement | null>(null);
+
+	// Sandbox LLM CSS inside the chat container using scoped style
+	const applyCss = useCallback((css: string) => {
+		if (!kimiStyleRef.current) {
+			const style = document.createElement("style");
+			style.id = "kimi-css";
+			document.head.appendChild(style);
+			kimiStyleRef.current = style;
+		}
+		// Prefix every rule with .chat-sandbox to scope it
+		if (!css) {
+			kimiStyleRef.current.textContent = "";
+			return;
+		}
+		// Simple scoping: wrap in .chat-sandbox
+		const scoped = css.replace(/([^{}]+)\{/g, (match, selector: string) => {
+			// Don't double-scope or scope @rules
+			if (selector.trim().startsWith("@") || selector.includes(".chat-sandbox")) return match;
+			const selectors = selector.split(",").map((s: string) => `.chat-sandbox ${s.trim()}`).join(", ");
+			return `${selectors} {`;
+		});
+		kimiStyleRef.current.textContent = scoped;
+	}, []);
+
+	useEffect(() => {
+		return () => {
+			if (kimiStyleRef.current) {
+				kimiStyleRef.current.remove();
+				kimiStyleRef.current = null;
+			}
+		};
+	}, []);
 
 	useEffect(() => {
 		if (messages.length === 0) return;
-		// Use rAF to avoid layout thrashing during React render
 		requestAnimationFrame(() => {
 			if (initialLoad.current) {
 				messagesEnd.current?.scrollIntoView();
@@ -156,17 +229,10 @@ function App() {
 			} else if (message.type === "css") {
 				applyCss(message.css);
 			} else if (message.type === "pages") {
-				setPages(message.pages);
+				// ignore pages in chat view
 			} else if (message.type === "page-update") {
-				const p = message.page;
-				setPages((prev) => {
-					const exists = prev.some((x) => x.slug === p.slug);
-					if (!exists) return [...prev, p];
-					return prev.map((x) => (x.slug === p.slug ? p : x));
-				});
-				setActivePage(p);
+				// ignore in chat view
 			} else if (message.type === "stream") {
-				// Streaming delta — append to existing streaming message or create one
 				setMessages((prev) => {
 					const existing = prev.find((m) => m.id === message.id);
 					if (existing) {
@@ -175,11 +241,9 @@ function App() {
 					return [...prev, { id: message.id, content: message.delta, user: message.user, role: "assistant" as const }];
 				});
 			} else if (message.type === "stream-end") {
-				// Finalize streaming message with parsed content
 				if (message.content) {
 					setMessages((prev) => prev.map((m) => m.id === message.id ? { ...m, content: message.content } : m));
 				} else {
-					// Empty response — remove the streaming placeholder
 					setMessages((prev) => prev.filter((m) => m.id !== message.id));
 				}
 			} else if (message.type === "delete") {
@@ -196,12 +260,7 @@ function App() {
 				setMessages((prev) =>
 					prev.map((m) => (m.id === msg.id ? msg : m)),
 				);
-				if (msg.role === "assistant") {
-					setActivePage(null);
-					setMobileTab("chat");
-				}
 			} else {
-				// merge server history with local state to avoid dropping optimistic messages
 				setMessages((prev) => {
 					const serverIds = new Set(message.messages.map((m: ChatMessage) => m.id));
 					const localOnly = prev.filter((m) => !serverIds.has(m.id));
@@ -213,14 +272,6 @@ function App() {
 
 	const lastTypingSent = useRef(0);
 
-	if (activePage) {
-		return (
-			<>
-				<PixelBackground />
-				<ArticlePage page={activePage} onBack={() => setActivePage(null)} />
-			</>
-		);
-	}
 	function sendTyping() {
 		if (!name) return;
 		const now = Date.now();
@@ -249,93 +300,113 @@ function App() {
 	return (
 		<>
 			<PixelBackground />
-			<div className="layout">
-				<div className={`app ${mobileTab !== "chat" ? "mobile-hidden" : ""}`}>
-					<header className="header">
-						<div className="brand">
-							gnome<span className="dot">.</span>science
-						</div>
-						<div className="header-right">{visitorCount > 0 && <span className="visitor-count">{visitorCount}</span>}Live</div>
-					</header>
+			<div className="chat-sandbox" ref={chatContainerRef}>
+				<div className="chat-layout">
+					<div className="app">
+						<header className="header">
+							<button className="nav-back" onClick={onBack}>&larr;</button>
+							<div className="brand">
+								gnome<span className="dot">.</span>science
+							</div>
+							<div className="header-right">{visitorCount > 0 && <span className="visitor-count">{visitorCount}</span>}Live</div>
+						</header>
 
+						{messages.length === 0 ? (
+							<div className="empty">
+								<div className="empty-text">Nothing here yet.</div>
+							</div>
+						) : (
+							<div className="messages">
+								{messages.map((msg, i) => (
+									<MsgRow key={msg.id} msg={msg} isSelf={msg.user === name} isLast={i === messages.length - 1} />
+								))}
+								<div ref={messagesEnd} />
+							</div>
+						)}
 
-					{messages.length === 0 ? (
-						<div className="empty">
-							<div className="empty-text">Nothing here yet.</div>
+						{typingUsers.size > 0 && (() => {
+							const users = [...typingUsers];
+							const hasKimi = typingUsers.has("Kimi K2.5");
+							const humans = users.filter((u) => u !== "Kimi K2.5");
+							const parts: string[] = [];
+							if (humans.length > 0) parts.push(`${humans.join(", ")} ${humans.length === 1 ? "is typing" : "are typing"}`);
+							if (hasKimi) parts.push("Kimi K2.5 is responding");
+							return <div className="typing-indicator">{parts.join(" · ")}...</div>;
+						})()}
+						<div className="compose">
+							<form
+								className="compose-form"
+								onSubmit={(e) => {
+									e.preventDefault();
+									const input = e.currentTarget.elements.namedItem("content") as HTMLInputElement;
+									const val = input.value.trim();
+									if (!val) return;
+									if (pendingMessage && !name) {
+										localStorage.setItem("gnome_username", val);
+										setName(val);
+										sendMessage(pendingMessage, val);
+										setPendingMessage(null);
+									} else if (!name) {
+										setPendingMessage(val);
+									} else {
+										sendMessage(val, name);
+									}
+									input.value = "";
+								}}
+							>
+								<input
+									type="text"
+									name="content"
+									className="compose-input"
+									placeholder={pendingMessage && !name ? "Enter your name..." : "Write something..."}
+									autoComplete="off"
+									onInput={sendTyping}
+								/>
+								<button type="submit" className="compose-send">{pendingMessage && !name ? "Join" : "Send"}</button>
+							</form>
+							{name && <div className="compose-meta">as {name}</div>}
 						</div>
-					) : (
-						<div className="messages">
-							{messages.map((msg, i) => (
-								<MsgRow key={msg.id} msg={msg} isSelf={msg.user === name} isLast={i === messages.length - 1} />
-							))}
-							<div ref={messagesEnd} />
-						</div>
-					)}
-
-					{typingUsers.size > 0 && (() => {
-					const users = [...typingUsers];
-					const hasKimi = typingUsers.has("Kimi K2.5");
-					const humans = users.filter((u) => u !== "Kimi K2.5");
-					const parts: string[] = [];
-					if (humans.length > 0) parts.push(`${humans.join(", ")} ${humans.length === 1 ? "is typing" : "are typing"}`);
-					if (hasKimi) parts.push("Kimi K2.5 is responding");
-					return <div className="typing-indicator">{parts.join(" · ")}...</div>;
-				})()}
-					<div className="compose">
-						<form
-							className="compose-form"
-							onSubmit={(e) => {
-								e.preventDefault();
-								const input = e.currentTarget.elements.namedItem(
-									"content",
-								) as HTMLInputElement;
-								const val = input.value.trim();
-								if (!val) return;
-								if (pendingMessage && !name) {
-									// Second submit: this is the username
-									localStorage.setItem("gnome_username", val);
-									setName(val);
-									sendMessage(pendingMessage, val);
-									setPendingMessage(null);
-								} else if (!name) {
-									// First submit without a name: stash the message, ask for name
-									setPendingMessage(val);
-								} else {
-									sendMessage(val, name);
-								}
-								input.value = "";
-							}}
-						>
-							<input
-								type="text"
-								name="content"
-								className="compose-input"
-								placeholder={pendingMessage && !name ? "Enter your name..." : "Write something..."}
-								autoComplete="off"
-								onInput={sendTyping}
-							/>
-							<button type="submit" className="compose-send">{pendingMessage && !name ? "Join" : "Send"}</button>
-						</form>
-						{name && <div className="compose-meta">as {name}</div>}
 					</div>
 				</div>
-
-				<aside className={`sidebar ${mobileTab === "pages" ? "mobile-visible" : ""}`}>
-					<div className="sidebar-label">Kimi's Creations</div>
-					{pages.map((p) => (
-						<button key={p.slug} className="sidebar-item" onClick={() => setActivePage(p)}>
-							<span className="sidebar-item-title">{p.title}</span>
-							<span className="sidebar-item-desc">{p.abstract}</span>
-						</button>
-					))}
-				</aside>
-			</div>
-			<div className="mobile-tabs">
-				<button className={`mobile-tab ${mobileTab === "chat" ? "active" : ""}`} onClick={() => setMobileTab("chat")}>Chat</button>
-				<button className={`mobile-tab ${mobileTab === "pages" ? "active" : ""}`} onClick={() => setMobileTab("pages")}>Pages</button>
 			</div>
 		</>
 	);
+}
+
+// ---- App root ----
+
+function App() {
+	const [view, setView] = useState<"home" | "chat" | "pages">("home");
+	const [pages, setPages] = useState<Page[]>([]);
+
+	// Fetch pages from server (lightweight connection just for pages data)
+	const socket = usePartySocket({
+		party: "chat",
+		room: "global",
+		onMessage: (evt) => {
+			const message = JSON.parse(evt.data as string) as Message;
+			if (message.type === "pages") {
+				setPages(message.pages);
+			} else if (message.type === "page-update") {
+				const p = message.page;
+				setPages((prev) => {
+					const exists = prev.some((x) => x.slug === p.slug);
+					if (!exists) return [...prev, p];
+					return prev.map((x) => (x.slug === p.slug ? p : x));
+				});
+			}
+		},
+	});
+
+	if (view === "chat") {
+		return <ChatView onBack={() => setView("home")} />;
+	}
+
+	if (view === "pages") {
+		return <PagesView pages={pages} onBack={() => setView("home")} />;
+	}
+
+	return <HomeScreen onNavigate={setView} />;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

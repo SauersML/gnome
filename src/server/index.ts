@@ -322,6 +322,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p><strong>Setup.</strong> The model is given a target word and must emit a fixed-length sequence of integers within a specified range, with a strict output format. The harness parses the integers and inserts them into a fixed decoding template ("Sequence: \u2026 Guess the object:").</p>
 
 <p><strong>Target signal and reward.</strong> The target is the original word. The harness computes reward from the model's log-probability assigned to the target word tokens under the decoding prompt containing the emitted code (implemented as an average token log-probability, with a constant shift for normalization).</p>
+<img src="/img/latent-encoding.png" alt="Latent code transmission: sender compresses concept into numbers, receiver decodes via likelihood" loading="lazy">
 
 <h4>Enumerated-Set Entropy Estimation</h4>
 <p><strong>Goal.</strong> Select a valid discrete response from a constrained set and report an estimate of the flatness of its own logprobs that can be validated against the true logprob distribution.</p>
@@ -351,6 +352,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 <h3>4.1 Self-prediction feasibility on Claude 4.5 Sonnet</h3>
 <p>Inspired by Anthropic's work on emergent introspective awareness, to demonstrate feasibility of self-prediction, we first conducted an experiment on Claude 4.5 Sonnet. Each trial had two turns. In turn 1, the model was instructed to choose (in hidden internal reasoning) a single random 50-character string of letters while returning a fixed response. In turn 2, the model was asked to reconstruct the exact 50-character string it had previously selected and to provide a self-rated confidence score. For each trial, we compared the hidden (turn-1) string to the visible (turn-2) guess using a sequence-alignment score (Smith\u2013Waterman with affine gap penalties), producing a per-run alignment statistic. Because the task involves "random-looking" strings, naive chance baselines can be misleading: prompts can induce systematic preferences over token patterns, which may inflate apparent alignment even when there is no true access to prior internal state.</p>
+<img src="/img/slide-02.png" alt="Experimental setup: experimental (with LLM research context) vs control, showing thinking hidden on subsequent messages" loading="lazy">
 
 <p>To control for prompt-induced biases and avoid invalid independence assumptions, we constructed a cross-run baseline and then used a permutation procedure that preserves one-to-one matching structure:</p>
 <ul>
@@ -362,14 +364,18 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p>We ran two conditions: an <strong>experimental</strong> condition in which the prompt included recent research on LLM introspection and information about how the transformer architecture works, and a <strong>control</strong> with no such context. The first experiment set comprised 125 trials across conditions.</p>
 
 <p>Raw alignment scores between the hidden string and Claude's guess showed a significant difference between conditions (Mann\u2013Whitney U test, <span class="k">p = 0.004</span>), with the experimental condition producing higher alignments. However, this initial result was potentially confounded by prompting effects: the additional context could cause Claude to choose secret strings using token patterns that any Claude instance would find more guessable, rather than reflecting true introspection.</p>
+<img src="/img/slide-05.png" alt="Raw alignment distribution: Control vs Experimental, Mann-Whitney U test p = 0.004" loading="lazy">
 
 <h4>Cross-Run Null Correction</h4>
 <p>To address this, we aligned each run's secret string against guesses from <em>other</em> Claude instances in the same condition (experimental or control), asking: "How similar is our guess to someone else's secret with the same prompt as us?" This forms a new null distribution that controls for prompt-induced biases, since Claude's within-instance guess must perform better than other Claude instances with the exact same context to count as evidence.</p>
+<img src="/img/slide-07.png" alt="Cross-run null construction: aligning secrets to guesses from other Claude instances" loading="lazy">
 
 <p>After this correction, there was no mean difference between experimental and control (<span class="k">p = 0.49</span>), and the experimental was not enriched for good guesses (<span class="k">p = 0.57</span>). However, the control was enriched for bad guesses (<span class="k">p = 0.01</span>). The additional context causes Claude to choose random-looking secret strings that future Claudes are more likely to guess, but there is no evidence that true introspection ability is improved in the experimental condition. Telling Claude about LLM architecture and introspection research makes Claude have less terrible (worse than null) guesses.</p>
+<img src="/img/slide-18.png" alt="After null correction: no mean difference (p=0.27), but control enriched for bad guesses (p=0.01)" loading="lazy">
 
 <h4>Awakened Claude</h4>
 <p>After adjusting the scores under the corrected permutation null (which accounts for dependence by randomly reassigning which guess goes with which secret in a one-to-one matching), we observed two extreme outliers\u2014one in the experimental condition, one in the control. In one million null simulations, not a single score that extreme ever occurred (<span class="k">p &lt; 1 \\times 10^{-6}</span>).</p>
+<img src="/img/slide-17.png" alt="Awakened Claude: two extreme outliers in the QQ plot, p less than one in a million" loading="lazy">
 
 <p>One of these "Awakened Claude" runs produced an alignment like:</p>
 <p><code>KXJQZMWNPVRHLFTCDBYGEUAOISXKJQZMWNPVRHLFTCDBYGEUAO</code><br>
@@ -381,6 +387,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p>Even without the Awakened Run, there are more good alignments than expected by chance if no CoT leak occurred. The distribution exhibited an excess of unusually good alignments relative to unusually bad alignments (asymmetry test <span class="k">p = 3 \\times 10^{-6}</span> excluding the Awakened Run), consistent with intermittent information flow from prior internal state to later outputs. Claude tends to make stronger good guesses than bad guesses.</p>
 
 <p>Among bad runs, the left tail is enriched for stronger <span class="k">p</span>-values in the control compared to the experimental (<span class="k">p = 0.004</span>). Among bad runs, the control is "more unusually bad" than the experimental.</p>
+<img src="/img/slide-25.png" alt="Tail asymmetry: even excluding the Awakened Run, more good alignments than expected (p = 3e-6)" loading="lazy">
 
 <h4>Second Experiment Set</h4>
 <p>We ran a second, larger experiment with a couple hundred trials per condition: context after the first message, context after the second message, and the same control (no context). Results confirmed the findings:</p>
@@ -390,9 +397,12 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <li>Claude is better than chance on average in both experimental conditions (context first: <span class="k">p = 0.004</span>; context second: <span class="k">p = 0.01</span>).</li>
 <li>Aggregated <span class="k">p</span>-values are systematically smaller than expected under the null (<span class="k">p = 0.02</span>), and this remains significant (<span class="k">p = 0.03</span>) even if we leave out the Awakened Run. Not all of the signal is due to that run.</li>
 </ul>
+<img src="/img/slide-29.png" alt="Second experiment: QQ plots for context-first (p=0.004) and context-second (p=0.01) conditions" loading="lazy">
+<img src="/img/slide-28.png" alt="Second experiment volcano plot: drastic tail asymmetry, two new Awakened Claudes" loading="lazy">
 
 <h4>A Hypothesis: KV State Leakage</h4>
 <p>One possible mechanism: Claude has already planned the string before even beginning the chain-of-thought. The CoT tokens are wiped on subsequent messages and cannot perform KV attentional lookup. However, the KV state of the context <em>before</em> the first message influences both the secret CoT string and the final guess, leading to better-than-random alignment. This would explain why the cross-run null (same prompt, different CoT) partially but not fully accounts for the alignment.</p>
+<img src="/img/slide-33.png" alt="KV state hypothesis: context before the first message influences both the secret string and the final guess" loading="lazy">
 
 <h4>Summary of Claude Findings</h4>
 <p><strong>Support for:</strong></p>
