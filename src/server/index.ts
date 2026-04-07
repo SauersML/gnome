@@ -24,6 +24,7 @@ interface KimiAction {
 	cssReset: boolean;
 	clearMessages: boolean;
 	edits: { id: string; content: string }[];
+	deletes: string[];
 	pageAdds: { slug: string; title: string; abstract: string; body: string }[];
 	pageEdits: { slug: string; title?: string; abstract?: string; body?: string }[];
 }
@@ -71,6 +72,14 @@ function parseKimiResponse(text: string): KimiAction {
 	const editBlockRegex = /```edit\s+id=(\S+)\s*\n([\s\S]*?)```/g;
 	for (const match of text.matchAll(editBlockRegex)) {
 		edits.push({ id: match[1], content: match[2].trim() });
+		chat = chat.replace(match[0], "").trim();
+	}
+
+	// Extract delete-message blocks: ```delete-message id=<msgId>```
+	const deletes: string[] = [];
+	const deleteRegex = /```delete-message\s+id=(\S+)\s*\n?[\s\S]*?```/g;
+	for (const match of text.matchAll(deleteRegex)) {
+		deletes.push(match[1]);
 		chat = chat.replace(match[0], "").trim();
 	}
 
@@ -126,7 +135,7 @@ function parseKimiResponse(text: string): KimiAction {
 		chat = chat.replace(match[0], "").trim();
 	}
 
-	return { chat, cssAdd: cssAdd.trim() || null, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits };
+	return { chat, cssAdd: cssAdd.trim() || null, cssEdits, cssReset, clearMessages, edits, deletes, pageAdds, pageEdits };
 }
 
 const PAGE_STRUCTURE = `<canvas class="pixel-bg" /> <!-- animated background -->
@@ -258,6 +267,50 @@ const DEFAULT_PAGES: Page[] = [
 	},
 ];
 
+// Silent moderation: drop racial slurs, homophobic slurs, and memecoin URLs
+// Patterns use stretched-letter-tolerant versions: n+i+g+ catches "niiiiggggg" etc.
+const SLUR_PATTERNS = [
+	// n-word: handles stretched letters, leet speak, spaces between letters
+	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+[\s_]*[e3]*[\s_]*r+/i,
+	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+[\s_]*[a@]+/i,
+	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+/i,
+	// message is basically just n-word letters repeated
+	/^[\s]*[n]+[\s]*[i1!|]+[\s]*[g]+[\s]*[g]*[\s]*[e3a@]*[\s]*[r]*[\s]*$/i,
+	// other racial slurs
+	/\bk[i1!|]+k+e+\b/i, /\bsp[i1!|]+c+\b/i, /\bsp[i1!|]+c+k+\b/i,
+	/\bch[i1!|]+n+k+\b/i, /\bg+o+o+k+\b/i, /\bw+e+t+b+a+c+k+/i,
+	/\bc+o+o+n+\b/i, /\bd+a+r+k+i+e+/i, /\bj+i+g+a+b+o+o+/i,
+	/\brag\s*head/i, /\btowel\s*head/i, /\bsand\s*n[i1!|]g/i,
+	/\bb+e+a+n+e+r+\b/i,
+	// homophobic slurs - stretched letter tolerant
+	/f+[\s_]*[a@4]+[\s_]*g+[\s_]*g+[\s_]*[o0]+[\s_]*t+/i,
+	/f+[\s_]*[a@4]+[\s_]*g+[\s_]*g+[\s_]*[o0]+[\s_]*t+[\s_]*s*/i,
+	/\bf+[a@4]+g+s?\b/i,
+	/\bd+y+k+e+\b/i, /\btr[a@4]+n+n+[yi1!|e]+/i, /\bs+h+e+m+a+l+e+/i,
+];
+
+const MEMECOIN_URL_PATTERNS = [
+	/pump\.fun/i, /dexscreener\.com/i, /dextools\.io/i,
+	/birdeye\.so/i, /raydium\.io/i, /jupiter\.ag/i,
+	/pancakeswap/i, /uniswap.*token/i,
+	/0x[a-f0-9]{40}/i,  // ETH contract address
+	/[1-9A-HJ-NP-Za-km-z]{32,44}/, // Solana address pattern (base58)
+	/buy\s*\$[A-Z]{2,10}/i, /token.*presale/i, /presale.*token/i,
+	/rug\s*pull/i,
+	/t\.me\/[a-z0-9_]*coin/i, /t\.me\/[a-z0-9_]*token/i,
+	/pump\s*$/i, // message ending in "pump"
+];
+
+function isModerated(content: string): boolean {
+	for (const p of SLUR_PATTERNS) {
+		if (p.test(content)) return true;
+	}
+	for (const p of MEMECOIN_URL_PATTERNS) {
+		if (p.test(content)) return true;
+	}
+	return false;
+}
+
 function sanitizeCss(css: string): string {
 	// Strip url(), @import, expression(), and javascript: to prevent data exfiltration
 	return css
@@ -272,6 +325,7 @@ You have tools via fenced code blocks (optional — feel free to just chat):
 \`\`\`css-add — appends CSS rules.
 \`\`\`css-edit — old snippet above ---, replacement below.
 \`\`\`css-reset — wipes custom CSS.
+\`\`\`delete-message id=<id> — deletes a chat message.
 \`\`\`page-add — new sidebar page (slug/title/abstract above ---, HTML body below).
 \`\`\`page-edit slug=<slug> — edit existing page fields, body below ---.
 Note: use css-add or css-edit, not plain css blocks.`;
@@ -289,9 +343,12 @@ You have tools via fenced code blocks (optional — feel free to just chat):
 \`\`\`css-edit — old snippet above ---, replacement below.
 \`\`\`css-reset — wipes custom CSS.
 \`\`\`edit id=<id> — rewrites a chat message.
+\`\`\`delete-message id=<id> — deletes a chat message.
 \`\`\`clear-messages — wipes all messages.
 \`\`\`page-add — new sidebar page (slug/title/abstract above ---, HTML body below, use <span class="k">LaTeX</span> for math).
-\`\`\`page-edit slug=<slug> — edit existing page fields, body below ---.`;
+\`\`\`page-edit slug=<slug> — edit existing page fields, body below ---.
+
+Each message has a (msg_id:...) at the end — use that ID for edit/delete tools. Never echo msg_id in your replies.`;
 }
 
 export class Chat extends Server<Env> {
@@ -432,6 +489,11 @@ export class Chat extends Server<Env> {
 		);
 	}
 
+	deleteMessage(id: string) {
+		this.messages = this.messages.filter((m) => m.id !== id);
+		this.ctx.storage.sql.exec(`DELETE FROM messages WHERE id = ?`, id);
+	}
+
 	savePage(page: Page) {
 		const idx = this.pages.findIndex((p) => p.slug === page.slug);
 		if (idx !== -1) {
@@ -464,24 +526,25 @@ export class Chat extends Server<Env> {
 
 
 
-	async sendBotReply(botName: string, model: string, systemPrompt: string, maxTokens = 20480) {
+	async sendBotReply(botName: string, model: string, systemPrompt: string, maxTokens = 4096) {
 		if (this.isRateLimited()) return;
 		this.recordKimiCall();
-
-		const apiKey = (this.env as any).OPENROUTER_API_KEY;
-		if (!apiKey) { console.error("No OPENROUTER_API_KEY"); return; }
 
 		const messages: { role: string; content: string }[] = [
 			{ role: "system", content: systemPrompt },
 		];
 		for (const m of this.messages.slice(-30)) {
+			const body = m.role === "assistant" ? m.content.slice(0, 500) : `${m.user}: ${m.content}`;
 			messages.push({
 				role: m.role === "assistant" ? "assistant" : "user",
-				content: m.role === "assistant" ? m.content.slice(0, 500) : `${m.user}: ${m.content}`,
+				content: `${body} (msg_id:${m.id})`,
 			});
 		}
 
 		const msgId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+		const apiKey = (this.env as any).OPENROUTER_API_KEY;
+		if (!apiKey) { console.error("No OPENROUTER_API_KEY"); return; }
 
 		this.broadcastMessage({ type: "typing", user: botName, isTyping: true });
 		try {
@@ -494,6 +557,7 @@ export class Chat extends Server<Env> {
 				},
 				body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
 			});
+			console.log("OpenRouter responded:", res.status);
 
 			if (!res.ok) {
 				const errText = await res.text();
@@ -501,20 +565,24 @@ export class Chat extends Server<Env> {
 			}
 
 			const data = await res.json() as any;
-			const fullText = data.choices?.[0]?.message?.content ?? "";
+			const fullText = (data.choices?.[0]?.message?.content ?? "")
+				.replace(/\(msg_id:[^)]*\)/g, "")
+				.replace(/\[id=[^\]]*\]/g, "")
+				.trim();
 
 			this.broadcastMessage({ type: "typing", user: botName, isTyping: false });
 
 			if (!fullText) return;
 
 			// Parse tool calls
-			const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, pageAdds, pageEdits } = parseKimiResponse(fullText);
+			const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, deletes, pageAdds, pageEdits } = parseKimiResponse(fullText);
 
 			const toolParts: string[] = [];
 			if (cssReset) toolParts.push("🔧 _reset CSS_");
 			if (cssAdd) toolParts.push("🔧 _added CSS_");
 			for (const e of cssEdits) toolParts.push("🔧 _edited CSS_");
 			for (const e of edits) toolParts.push(`🔧 _edited message ${e.id}_`);
+			for (const d of deletes) toolParts.push(`🔧 _deleted message ${d}_`);
 			if (clearMessages) toolParts.push("🔧 _cleared all messages_");
 			for (const p of pageAdds) toolParts.push(`🔧 _created page "${p.title}"_`);
 			for (const p of pageEdits) toolParts.push(`🔧 _edited page "${p.slug}"_`);
@@ -555,6 +623,13 @@ export class Chat extends Server<Env> {
 					this.broadcastMessage({ type: "update", ...updated });
 				}
 			}
+			for (const id of deletes) {
+				const existing = this.messages.find((m) => m.id === id);
+				if (existing) {
+					this.deleteMessage(id);
+					this.broadcastMessage({ type: "delete", id });
+				}
+			}
 			if (clearMessages) {
 				this.messages = [];
 				this.ctx.storage.sql.exec(`DELETE FROM messages`);
@@ -586,37 +661,37 @@ export class Chat extends Server<Env> {
 		state.timestamps.push(now);
 		(connection as any)._rl = state;
 
+		const parsed = JSON.parse(message as string) as Message;
+
+		// Silent moderation: drop slurs and memecoin spam (skip bot messages)
+		if ((parsed.type === "add" || parsed.type === "update") && parsed.role !== "assistant" && isModerated(parsed.content)) {
+			return; // silently drop
+		}
+
 		this.broadcast(message);
 
-		const parsed = JSON.parse(message as string) as Message;
 		if (parsed.type === "add" || parsed.type === "update") {
 			this.saveMessage(parsed);
 
 			if (parsed.type === "add" && KIMI_PATTERN.test(parsed.content)) {
-				this.sendBotReply(
+				await this.sendBotReply(
 					"Kimi K2.5",
 					"moonshotai/kimi-k2.5",
 					buildSystemPrompt(this.customCss, this.pages),
 				);
 			}
 
-			// Cogito: responds if mentioned by name, or randomly 1/5 messages
+			// Cogito or Claude: responds if mentioned by name, or randomly
 			if (parsed.type === "add" && parsed.role !== "assistant"
 				&& !KIMI_PATTERN.test(parsed.content)) {
 				if (COGITO_PATTERN.test(parsed.content) || Math.random() < 0.2) {
-					this.sendBotReply(
+					await this.sendBotReply(
 						"Cogito v2.1",
 						"deepcogito/cogito-v2.1-671b",
 						`You are chatting at gnome.science.\n${TOOL_DOCS}`,
 					);
-				}
-			}
-
-			// Claude: responds if mentioned by name, or randomly 1/10 messages
-			if (parsed.type === "add" && parsed.role !== "assistant"
-				&& !KIMI_PATTERN.test(parsed.content)) {
-				if (CLAUDE_PATTERN.test(parsed.content) || Math.random() < 0.1) {
-					this.sendBotReply(
+				} else if (CLAUDE_PATTERN.test(parsed.content) || Math.random() < 0.1) {
+					await this.sendBotReply(
 						"Claude",
 						"anthropic/claude-haiku-4.5",
 						`You are chatting at gnome.science.\n${TOOL_DOCS}`,

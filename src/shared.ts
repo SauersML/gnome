@@ -53,6 +53,10 @@ export type Message =
 			count: number;
 	  }
 	| {
+			type: "delete";
+			id: string;
+	  }
+	| {
 			type: "stream";
 			id: string;
 			user: string;

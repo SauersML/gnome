@@ -166,6 +166,8 @@ function App() {
 					// Empty response — remove the streaming placeholder
 					setMessages((prev) => prev.filter((m) => m.id !== message.id));
 				}
+			} else if (message.type === "delete") {
+				setMessages((prev) => prev.filter((m) => m.id !== message.id));
 			} else if (message.type === "add") {
 				const msg: ChatMessage = { id: message.id, content: message.content, user: message.user, role: message.role };
 				setMessages((prev) => {
