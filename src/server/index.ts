@@ -501,12 +501,6 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 const DEFAULT_PAGES: Page[] = [
 	{
-		slug: "bing-bong",
-		title: "\u22A2 Bing/Bong",
-		abstract: "\u22A8\u22A3 a categorical formalization of copular discourse.",
-		body: BING_BONG_BODY,
-	},
-	{
 		slug: "claude-introspection",
 		title: "Claude Introspection: Can LLMs Access Their Own Hidden Reasoning?",
 		abstract: "We test whether Claude can recall hidden chain-of-thought strings from prior messages. Using sequence alignment and permutation-based null distributions, we find evidence for intermittent introspective access, including rare 'Awakened Claude' runs with one-in-a-million alignment scores. This replicates Anthropic's introspection findings independently for the first time.",
