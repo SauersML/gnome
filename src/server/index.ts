@@ -267,13 +267,14 @@ const DEFAULT_PAGES: Page[] = [
 	},
 ];
 
-// Silent moderation: drop racial slurs, homophobic slurs, and memecoin URLs
+// Silent moderation: drop racial slurs, homophobic slurs, sexual harassment, and memecoin URLs
 // Patterns use stretched-letter-tolerant versions: n+i+g+ catches "niiiiggggg" etc.
 const SLUR_PATTERNS = [
 	// n-word: handles stretched letters, leet speak, spaces between letters
 	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+[\s_]*[e3]*[\s_]*r+/i,
 	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+[\s_]*[a@]+/i,
 	/n+[\s_]*[i1!|]+[\s_]*g+[\s_]*g+/i,
+	/n[i1!|]+g+[a@]+/i, // single-g variant: "niga", "nigga", "niggaaaa" etc (no boundary needed)
 	// message is basically just n-word letters repeated
 	/^[\s]*[n]+[\s]*[i1!|]+[\s]*[g]+[\s]*[g]*[\s]*[e3a@]*[\s]*[r]*[\s]*$/i,
 	// other racial slurs
@@ -287,6 +288,13 @@ const SLUR_PATTERNS = [
 	/f+[\s_]*[a@4]+[\s_]*g+[\s_]*g+[\s_]*[o0]+[\s_]*t+[\s_]*s*/i,
 	/\bf+[a@4]+g+s?\b/i,
 	/\bd+y+k+e+\b/i, /\btr[a@4]+n+n+[yi1!|e]+/i, /\bs+h+e+m+a+l+e+/i,
+	// sexual harassment / sex spam
+	/have\s*s[e3]x\s*with/i, // "have sex with" anything
+	/wanna\s*(f+u+c+k+|s[e3]x|bang|smash)/i,
+	/(s[e3]x\s*){2,}/i, // repeated "sex" spam (with or without spaces)
+	/^s[e3]x/i, // message starting with "sex"
+	/\bmy\s*(pepe|pee\s*pee|pp|dick|cock|penis)\b/i, // genital references
+	/n+o+f+a+p+/i,
 ];
 
 const MEMECOIN_URL_PATTERNS = [
@@ -399,7 +407,7 @@ export class Chat extends Server<Env> {
 			.toArray() as ChatMessage[];
 
 		// Purge any existing messages that match the moderation filter
-		const toDelete = this.messages.filter((m) => m.role !== "assistant" && isModerated(m.content));
+		const toDelete = this.messages.filter((m) => m.role !== "assistant" && (isModerated(m.content) || isModerated(m.user)));
 		for (const m of toDelete) {
 			this.deleteMessage(m.id);
 		}
@@ -670,8 +678,21 @@ export class Chat extends Server<Env> {
 		const parsed = JSON.parse(message as string) as Message;
 
 		// Silent moderation: drop slurs and memecoin spam (skip bot messages)
-		if ((parsed.type === "add" || parsed.type === "update") && parsed.role !== "assistant" && isModerated(parsed.content)) {
+		if ((parsed.type === "add" || parsed.type === "update") && parsed.role !== "assistant" && (isModerated(parsed.content) || isModerated(parsed.user))) {
 			return; // silently drop
+		}
+
+		// Repetitive spam detection: same user sending same/similar message 3+ times in 30s
+		if ((parsed.type === "add") && parsed.role !== "assistant") {
+			const spam = (connection as any)._spam || { msgs: [] as { text: string; time: number }[] };
+			const normalized = parsed.content.replace(/\s+/g, "").toLowerCase();
+			spam.msgs = spam.msgs.filter((m: { time: number }) => now - m.time < 30000);
+			const dupes = spam.msgs.filter((m: { text: string }) => m.text === normalized).length;
+			spam.msgs.push({ text: normalized, time: now });
+			(connection as any)._spam = spam;
+			if (dupes >= 2) {
+				return; // silently drop repetitive spam
+			}
 		}
 
 		this.broadcast(message);
