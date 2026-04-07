@@ -839,14 +839,14 @@ export class Chat extends Server<Env> {
 
 
 
-	async sendBotReply(botName: string, model: string, systemPrompt: string, maxTokens = 4096) {
+	async sendBotReply(botName: string, model: string, systemPrompt: string, maxTokens = 4096, contextMessages = 30) {
 		if (this.isRateLimited()) return;
 		this.recordKimiCall();
 
 		const messages: { role: string; content: string }[] = [
 			{ role: "system", content: systemPrompt },
 		];
-		for (const m of this.messages.slice(-30)) {
+		for (const m of this.messages.slice(-contextMessages)) {
 			const body = m.role === "assistant" ? m.content.slice(0, MAX_MSG_LENGTH) : `${m.user}: ${m.content.slice(0, MAX_MSG_LENGTH)}`;
 			messages.push({
 				role: m.role === "assistant" ? "assistant" : "user",
@@ -862,15 +862,25 @@ export class Chat extends Server<Env> {
 		this.broadcastMessage({ type: "typing", user: botName, isTyping: true });
 		try {
 			console.log("Calling", model, "via OpenRouter with", messages.length, "messages");
-			const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					"Authorization": `Bearer ${apiKey}`,
-				},
-				body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+			const reqBody = JSON.stringify({ model, messages, max_tokens: maxTokens });
+			const reqHeaders = {
+				"Content-Type": "application/json",
+				"Authorization": `Bearer ${apiKey}`,
+			};
+			let res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+				method: "POST", headers: reqHeaders, body: reqBody,
 			});
 			console.log("OpenRouter responded:", res.status);
+
+			// Retry up to 2 times on 5xx (transient provider errors)
+			for (let retry = 0; retry < 2 && res.status >= 500; retry++) {
+				console.log(`${model} returned ${res.status}, retry ${retry + 1}/2 after ${(retry + 1) * 2}s`);
+				await new Promise(r => setTimeout(r, (retry + 1) * 2000));
+				res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+					method: "POST", headers: reqHeaders, body: reqBody,
+				});
+				console.log(`Retry ${retry + 1} responded:`, res.status);
+			}
 
 			if (!res.ok) {
 				const errText = await res.text();
@@ -1013,6 +1023,7 @@ export class Chat extends Server<Env> {
 						"deepcogito/cogito-v2.1-671b",
 						`You are chatting at gnome.science.\n${TOOL_DOCS}`,
 						1024,
+						10,
 					);
 				} else if (CLAUDE_PATTERN.test(parsed.content) || Math.random() < 0.1) {
 					await this.sendBotReply(
