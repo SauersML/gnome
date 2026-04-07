@@ -362,19 +362,19 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 <h2>Approach</h2>
 
-<h3>3.1 Training Objective</h3>
+<h3>Training Objective</h3>
 <p>We use a multi-objective reinforcement learning setup in which the total reward is a weighted sum of terms:</p>
 <div class="tex-block"><span class="kb">R = \\lambda_{\\text{task}} R_{\\text{task}} + \\lambda_{\\text{cal}} R_{\\text{cal}} + \\lambda_{\\text{pred}} R_{\\text{pred}} \\, , \\ldots</span></div>
 <p>where <span class="k">R_{\\text{task}}</span> rewards task performance (when applicable), <span class="k">R_{\\text{cal}}</span> rewards calibration-related reporting, and <span class="k">R_{\\text{pred}}</span> rewards prediction of training-time targets derived from token-level likelihoods and simulated update effects. The weights <span class="k">\\lambda</span> define the trade-off among performance and reporting accuracy.</p>
 
-<h3>3.2 Asynchronous Multi-Task RL Harness</h3>
+<h3>Asynchronous Multi-Task RL Harness</h3>
 <p>We implement a reinforcement learning harness designed to maintain high utilization by decoupling rollout generation from optimization. The system uses an asynchronous producer\u2013consumer pipeline with bounded queues: a loader continuously produces environment instances from a weighted multi-task curriculum, a pool of rollout workers generates trajectories using the current inference service, and a trainer consumes completed trajectories to perform gradient updates. An evaluation loop runs in parallel, triggered by model updates, and does not block training.</p>
 
 <p>To reduce update latency and avoid large buffering, training supports streaming micro-batches. Trajectories are consumed incrementally, and as soon as enough items are available to form a valid micro-batch, they are dispatched for a gradient update.</p>
 
 <p>The harness periodically saves model state (including LoRA adapters), optimizer state, random seeds, and curriculum indices to allow pause/resume under preemptible compute. For efficiency, we apply LoRA updates rather than full-parameter fine-tuning.</p>
 
-<h3>3.3 Synthetic Environments for Self-Prediction</h3>
+<h3>Synthetic Environments for Self-Prediction</h3>
 <p>We train on a curriculum of synthetic environments where reward targets are computed from signals available at training time: either ground-truth labels from a generator, or quantities obtained through the model scoring interface (log-probabilities), and\u2014in one environment\u2014through a controlled single-step parameter update on an isolated copy of the model.</p>
 
 <h4>Context-Conditioned Likelihood-Shift Prediction and Surprise Ranking</h4>
@@ -423,10 +423,10 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 <p><strong>Reward.</strong> Reward combines (i) format validity, (ii) task accuracy, and (iii) a calibration term computed using the Brier formulation <span class="k">1-(c-y)^2</span>, which is a strictly proper scoring rule for probabilistic forecasts.</p>
 
-<h3>3.4 Curriculum and Optimization</h3>
+<h3>Curriculum and Optimization</h3>
 <p>We draw tasks online from a weighted mixture over the environments. Optimization is performed using policy-gradient reinforcement learning. Because rollout generation and optimization are decoupled, we limit off-policy effects by enforcing a maximum staleness threshold on concurrently generated trajectories.</p>
 
-<h3>3.5 Engineering and Measurement Challenges</h3>
+<h3>Engineering and Measurement Challenges</h3>
 <p>Computing reward targets from internal signals can be substantially more expensive than string-based rewards. In particular, update-effect prediction requires additional forward/backward passes and an optimizer step on a model copy, which can dominate rollout cost. To mitigate this, the harness parallelizes reward computation and isolates expensive target computation from the main sampling loop where possible. A second challenge is preventing degenerate reporting strategies (always outputting extreme values); we address this by using proper scoring rules when feasible and by mixing environments to maintain pressure on both task performance and reporting quality.</p>
 
 <h2>Experiments and Results</h2>
@@ -495,7 +495,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p>A critical theoretical tension exists between our methodology and recent findings on anti-scheming training. Research identifies situational awareness and introspection as necessary precursors for covertly misaligned behavior, such as strategic underperformance or gradient manipulation. Under that framework, increasing a model's capacity to reason about its own training process could arguably increase the risk of scheming. However, our work proceeds from the opposing hypothesis: that verifying self-reports against ground-truth internal signals acts as a constraint mechanism. That is, honesty is a form of accurate self-prediction and reporting. Resolving whether self-prediction serves as a capability amplifier for scheming or a mechanism for honesty remains an open question.</p>
 
 <h2>Conclusion</h2>
-<p>We implement a general multi-objective reinforcement learning harness which can be re-used in other research, as well as provide a series of novel evaluations related to self-prediction which can be applied to other models. We show evidence for introspection, a form of self-prediction, in Claude 4.5 Sonnet. We train an open-source model on multiple tasks and measure performance before and after training. We find strong evidence that training improves the model's ability to transmit words via random-looking numeric codes in a way that is understandable by a copy of itself (i.e., allows the other model to guess the word). We also replicate the introspection observed in "Emergent Introspective Awareness in Large Language Models" on Claude for the first time outside of Anthropic.</p>
+<p>We implement a general multi-objective reinforcement learning harness which can be re-used in other research, as well as provide a series of novel evaluations related to self-prediction which can be applied to other models. We train an open-source model (Qwen-30B-A3B) on multiple self-prediction tasks and measure performance before and after training. We find strong evidence that training improves the model's ability to transmit words via random-looking numeric codes in a way that is understandable by a copy of itself, with significant out-of-distribution generalization. No improvement was observed on calibration, entropy estimation, or alignment-related tasks.</p>
 
 <p><em>Code and data: <a href="https://github.com/SauersML/minds_RL" target="_blank" rel="noopener">github.com/SauersML/minds_RL</a></em></p>`;
 
@@ -507,9 +507,15 @@ const DEFAULT_PAGES: Page[] = [
 		body: BING_BONG_BODY,
 	},
 	{
+		slug: "claude-introspection",
+		title: "Claude Introspection: Can LLMs Access Their Own Hidden Reasoning?",
+		abstract: "We test whether Claude can recall hidden chain-of-thought strings from prior messages. Using sequence alignment and permutation-based null distributions, we find evidence for intermittent introspective access, including rare 'Awakened Claude' runs with one-in-a-million alignment scores. This replicates Anthropic's introspection findings independently for the first time.",
+		body: CLAUDE_INTROSPECTION_BODY,
+	},
+	{
 		slug: "minds-rl",
 		title: "Training Language Models to Self-Predict Using Reinforcement Learning",
-		abstract: "We study whether multi-objective RL with rewards computed from training-time signals can improve self-reporting and calibration. After training, we find significant out-of-distribution improvement on latent concept encoding, and replicate introspective awareness in Claude 4.5 Sonnet for the first time outside of Anthropic.",
+		abstract: "We study whether multi-objective RL with rewards computed from training-time signals can improve self-reporting and calibration. After training Qwen-30B-A3B, we find significant out-of-distribution improvement on latent concept encoding but no generalization to calibration or alignment tasks.",
 		body: MINDS_RL_BODY,
 	},
 ];
