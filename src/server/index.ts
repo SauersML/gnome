@@ -398,6 +398,12 @@ export class Chat extends Server<Env> {
 			.exec(`SELECT * FROM messages ORDER BY rowid`)
 			.toArray() as ChatMessage[];
 
+		// Purge any existing messages that match the moderation filter
+		const toDelete = this.messages.filter((m) => m.role !== "assistant" && isModerated(m.content));
+		for (const m of toDelete) {
+			this.deleteMessage(m.id);
+		}
+
 		this.pages = this.ctx.storage.sql
 			.exec(`SELECT * FROM pages`)
 			.toArray() as Page[];
