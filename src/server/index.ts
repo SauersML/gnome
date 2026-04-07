@@ -339,7 +339,17 @@ const CLAUDE_INTROSPECTION_BODY = `<p><em>Sauers, 2025</em></p>
 
 <p>Claude can access the thinking of previous messages, though good access is rare, and Claude is not aware of this access in reports. This replicates the introspection observed in "Emergent Introspective Awareness in Large Language Models" on Claude for the first time outside of Anthropic.</p>
 
-<p><em>Code and data: <a href="https://github.com/SauersML/minds_RL" target="_blank" rel="noopener">github.com/SauersML/minds_RL</a></em></p>`;
+<h2>Data and Methods</h2>
+<p>All CoT data, prompts, per-run alignment scores, and permutation test results are publicly available. The experimental context prompt provides a detailed explainer on transformer architecture (KV caching, attention mechanisms, residual streams) and recent introspection research findings.</p>
+<ul>
+<li><strong>Model:</strong> Claude Sonnet 4.5 (<code>claude-sonnet-4-5</code>), 20k thinking budget tokens</li>
+<li><strong>Trials:</strong> 300 per condition (control, experimental phase 1, experimental phase 2)</li>
+<li><strong>Alignment metric:</strong> Smith\u2013Waterman with affine gap penalties, expectation score adjusted for letter frequency bias</li>
+<li><strong>Null construction:</strong> Up to <span class="k">10^6</span> permutations with one-to-one secret\u2013guess reassignment</li>
+</ul>
+
+<p><em>CoT data and analysis: <a href="https://github.com/SauersML/CoT_data" target="_blank" rel="noopener">github.com/SauersML/CoT_data</a></em></p>
+<p><em>Full paper and code: <a href="https://github.com/SauersML/minds_RL" target="_blank" rel="noopener">github.com/SauersML/minds_RL</a></em></p>`;
 
 const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
