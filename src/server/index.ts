@@ -380,16 +380,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p>(i) measures confidence calibration. (ii) is related to uncertainty calibration but measures logit shape. (iii) and (iv) involve understanding its own in-context learning. (v) involves understanding its own training dynamics. (vi) requires understanding itself enough to stenographically encode meaning in a self-decodable way.</p>
 
 <h2>Problem Setting and Motivation</h2>
-<p>Most post-training methods optimize for behavioral alignment: rewarding outputs that match reference answers, satisfy human preferences, or conform to stylistic norms. These objectives improve instruction-following but do not require the model to accurately report properties of its own computation. A model trained only on behavioral signals can produce fluent confidence statements that are poorly calibrated or strategically optimized to satisfy training criteria without reflecting genuine uncertainty.</p>
-
-<p>I study a different class of objectives: rewards that require the model's self-reports to match quantities that the training system can compute and verify. Concretely, each training instance specifies:</p>
-<ul>
-<li>an <strong>interaction</strong>: a prompt and structured output format that includes a self-report (e.g., a confidence score, an entropy estimate, or a prediction about the model's own behavior),</li>
-<li>a <strong>target signal</strong>: a ground-truth value computed by the training harness from the model's token-level probabilities, entropy, or simulated update effects,</li>
-<li>a <strong>reward function</strong>: a score based on agreement between the model's reported value and the computed target, optionally combined with task performance.</li>
-</ul>
-
-<p>The model observes only the prompt; targets are never revealed, and no supervised learning is used. This framing differs from standard alignment in that correctness of self-reports is mechanically verifiable rather than judged by humans or learned proxies.</p>
+<p>Post-training optimizing for the consequences of outputs generally does not require the model to accurately report its own properties. (Though it is not the case that this is always good to do. Nevertheless, whether it can be trained is interesting.) Here, the model is rewarded for self-reports which match internally verified truth.</p>
 
 <h2>Approach</h2>
 
