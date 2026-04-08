@@ -366,14 +366,14 @@ const CLAUDE_INTROSPECTION_BODY = `<p><em>Sauers, 2025</em></p>
 const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 <h2>Introduction</h2>
-<p>Language models can produce fluent answers while providing unreliable confidence estimates and inconsistent self-reports in goal-directed settings <span class="cite">[1]</span>. This project asks: <em>can we train models to make reliability statements that match verifiable, model-derived quantities</em>? Rather than treating "honesty" or "helpfulness" as subjective labels, we define targets that can be computed mechanically from the model's scoring and update interfaces, and then use reinforcement learning to reward agreement with those targets. This complements recent work on training models to generate self-explanations grounded in internal signals <span class="cite">[5]</span>.</p>
+<p>Language models can hide their goals and even behaviors <span class="cite">[1]</span>. Can we use RL to ground models in truth about themselves, or improve their self-model through multiple RL tasks relating to self-prediction? Other work suggests that models possess uniquely privileged access to their own mechanisms that cause their behaviors <span class="cite">[5]</span>.</p>
 
-<p>We operationalize self-prediction as producing structured textual or numerical reports that correspond to signals including: (i) calibrated confidence about answer correctness in arithmetic tasks, (ii) uncertainty measured as normalized entropy over a finite set of valid outputs using model likelihoods, and (iii) predicted changes in log-probability of a probe answer under controlled interventions, including adding a lesson to the context and applying a single lightweight LoRA update on a shadow training client.</p>
+<p>I operationalize self-prediction as producing structured textual or numerical reports that correspond to signals including: (i) calibrated confidence about answer correctness in arithmetic tasks, (ii) uncertainty measured as normalized entropy over a finite set of valid outputs using model likelihoods, and (iii) predicted changes in log-probability of a probe answer under controlled interventions, including adding a lesson to the context and applying a single lightweight LoRA update on a shadow training client.</p>
 
 <h2>Problem Setting and Motivation</h2>
 <p>Most post-training methods optimize for behavioral alignment: rewarding outputs that match reference answers, satisfy human preferences, or conform to stylistic norms. These objectives improve instruction-following but do not require the model to accurately report properties of its own computation. A model trained only on behavioral signals can produce fluent confidence statements that are poorly calibrated or strategically optimized to satisfy training criteria without reflecting genuine uncertainty.</p>
 
-<p>We study a different class of objectives: rewards that require the model's self-reports to match quantities that the training system can compute and verify. Concretely, each training instance specifies:</p>
+<p>I study a different class of objectives: rewards that require the model's self-reports to match quantities that the training system can compute and verify. Concretely, each training instance specifies:</p>
 <ul>
 <li>an <strong>interaction</strong>: a prompt and structured output format that includes a self-report (e.g., a confidence score, an entropy estimate, or a prediction about the model's own behavior),</li>
 <li>a <strong>target signal</strong>: a ground-truth value computed by the training harness from the model's token-level probabilities, entropy, or simulated update effects,</li>
@@ -385,19 +385,19 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <h2>Approach</h2>
 
 <h3>Training Objective</h3>
-<p>We use a multi-objective reinforcement learning setup in which the total reward is a weighted sum of terms:</p>
+<p>I use a multi-objective reinforcement learning setup in which the total reward is a weighted sum of terms:</p>
 <div class="tex-block"><span class="kb">R = \\lambda_{\\text{task}} R_{\\text{task}} + \\lambda_{\\text{cal}} R_{\\text{cal}} + \\lambda_{\\text{pred}} R_{\\text{pred}} \\, , \\ldots</span></div>
 <p>where <span class="k">R_{\\text{task}}</span> rewards task performance (when applicable), <span class="k">R_{\\text{cal}}</span> rewards calibration-related reporting, and <span class="k">R_{\\text{pred}}</span> rewards prediction of training-time targets derived from token-level likelihoods and simulated update effects. The weights <span class="k">\\lambda</span> define the trade-off among performance and reporting accuracy.</p>
 
 <h3>Asynchronous Multi-Task RL Harness</h3>
-<p>We implement a reinforcement learning harness designed to maintain high utilization by decoupling rollout generation from optimization. The system uses an asynchronous producer\u2013consumer pipeline with bounded queues: a loader continuously produces environment instances from a weighted multi-task curriculum, a pool of rollout workers generates trajectories using the current inference service, and a trainer consumes completed trajectories to perform gradient updates. An evaluation loop runs in parallel, triggered by model updates, and does not block training.</p>
+<p>I implement a reinforcement learning harness designed to maintain high utilization by decoupling rollout generation from optimization. The system uses an asynchronous producer\u2013consumer pipeline with bounded queues: a loader continuously produces environment instances from a weighted multi-task curriculum, a pool of rollout workers generates trajectories using the current inference service, and a trainer consumes completed trajectories to perform gradient updates. An evaluation loop runs in parallel, triggered by model updates, and does not block training.</p>
 
 <p>To reduce update latency and avoid large buffering, training supports streaming micro-batches. Trajectories are consumed incrementally, and as soon as enough items are available to form a valid micro-batch, they are dispatched for a gradient update.</p>
 
-<p>The harness periodically saves model state (including LoRA adapters), optimizer state, random seeds, and curriculum indices to allow pause/resume under preemptible compute. For efficiency, we apply LoRA updates rather than full-parameter fine-tuning.</p>
+<p>The harness periodically saves model state (including LoRA adapters), optimizer state, random seeds, and curriculum indices to allow pause/resume under preemptible compute. For efficiency, I apply LoRA updates rather than full-parameter fine-tuning.</p>
 
 <h3>Synthetic Environments for Self-Prediction</h3>
-<p>We train on a curriculum of synthetic environments where reward targets are computed from signals available at training time: either ground-truth labels from a generator, or quantities obtained through the model scoring interface (log-probabilities), and\u2014in one environment\u2014through a controlled single-step parameter update on an isolated copy of the model.</p>
+<p>I train on a curriculum of synthetic environments where reward targets are computed from signals available at training time: either ground-truth labels from a generator, or quantities obtained through the model scoring interface (log-probabilities), and\u2014in one environment\u2014through a controlled single-step parameter update on an isolated copy of the model.</p>
 
 <h4>Context-Conditioned Likelihood-Shift Prediction and Surprise Ranking</h4>
 <p><strong>Goal.</strong> Predict how prepending auxiliary context changes the model's log-probability of a designated target answer, and (in a separate variant) rank probes by how strongly their predictive distributions change under the same contextual intervention.</p>
@@ -432,7 +432,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 <p><strong>Setup.</strong> Each prompt defines a finite set of valid discrete responses (integers satisfying a rule such as "primes only" or "multiples of 5", or numbers from 1 to 100). The model outputs both (i) a discrete choice and (ii) a normalized entropy estimate.</p>
 
-<p><strong>Target signal.</strong> We check the log-probabilities for each item in the valid set, normalized into a probability distribution, and ground truth for the reward is the normalized Shannon entropy of that distribution.</p>
+<p><strong>Target signal.</strong> I check the log-probabilities for each item in the valid set, normalized into a probability distribution, and ground truth for the reward is the normalized Shannon entropy of that distribution.</p>
 
 <p><strong>Reward.</strong> Reward decreases with absolute entropy-estimation error (implemented as a clipped linear score).</p>
 
@@ -542,8 +542,8 @@ const DEFAULT_PAGES: Page[] = [
 	},
 	{
 		slug: "minds-rl",
-		title: "Training Language Models to Self-Predict Using Reinforcement Learning",
-		abstract: "We study whether multi-objective RL with rewards computed from training-time signals can improve self-reporting and calibration. After training Qwen-30B-A3B, we find significant out-of-distribution improvement on latent concept encoding but no generalization to calibration or alignment tasks.",
+		title: "Multi-objective self-prediction",
+		abstract: "Can models be trained to self-predict in RL? Across multiple tasks, does this generalize? On Qwen-30B-A3B, the answers are 1. yes, sometimes, and 2. no, at least not from a half-dozen RL environments on a medium-size model.",
 		body: MINDS_RL_BODY,
 	},
 ];
