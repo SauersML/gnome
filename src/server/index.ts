@@ -368,7 +368,16 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <h2>Introduction</h2>
 <p>Language models can hide their goals and even behaviors <span class="cite">[1]</span>. Can I use RL to ground models in truth about themselves, or improve their self-model through multiple RL tasks relating to self-prediction? Other work suggests that models possess uniquely privileged access to their own mechanisms that cause their behaviors <span class="cite">[5]</span>.</p>
 
-<p>I operationalize self-prediction as producing structured textual or numerical reports that correspond to signals including: (i) calibrated confidence about answer correctness in arithmetic tasks, (ii) uncertainty measured as normalized entropy over a finite set of valid outputs using model likelihoods, and (iii) predicted changes in log-probability of a probe answer under controlled interventions, including adding a lesson to the context and applying a single lightweight LoRA update on a shadow training client.</p>
+<p>The RL environments used here include:</p>
+<ol>
+<li>Predicting the probability that the model can correctly answer an arithmetic question (while correctly answering the question).</li>
+<li>Predicting the uncertainty (or normalized entropy) of the model's own logits.</li>
+<li>Predicting how its own log-probability of an answer will change in response to some new context.</li>
+<li>Predicting the likelihood rankings of various possible answers, given a piece of context.</li>
+<li>Predicting how a single LoRA update changes its own log-probability on some question.</li>
+<li>The model is given a target word and must generate a number sequence that encodes the word. The same model sees the numbers and guesses the word. The higher the log-probability assigned to the correct word, the greater the reward.</li>
+</ol>
+<p>(i) measures confidence calibration. (ii) is related to uncertainty calibration but measures logit shape. (iii) and (iv) involve understanding its own in-context learning. (v) involves understanding its own training dynamics. (vi) requires understanding itself enough to stenographically encode meaning in a self-decodable way.</p>
 
 <h2>Problem Setting and Motivation</h2>
 <p>Most post-training methods optimize for behavioral alignment: rewarding outputs that match reference answers, satisfy human preferences, or conform to stylistic norms. These objectives improve instruction-following but do not require the model to accurately report properties of its own computation. A model trained only on behavioral signals can produce fluent confidence statements that are poorly calibrated or strategically optimized to satisfy training criteria without reflecting genuine uncertainty.</p>
