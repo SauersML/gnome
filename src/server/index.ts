@@ -400,59 +400,45 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p>The reinforcement learning harness decouples inference from optimization. It has an asynchronous producer\u2013consumer pipeline, with a loader that produces environment instances, a pool of workers that runs inference, a reward calculator, and a trainer that performs updates. I train on a mixture of all of the environments.</p>
 
 <h3>Synthetic Environments for Self-Prediction</h3>
-<p>I train on a curriculum of synthetic environments where reward targets are computed from signals available at training time: either ground-truth labels from a generator, or quantities obtained through the model scoring interface (log-probabilities), and\u2014in one environment\u2014through a controlled single-step parameter update on an isolated copy of the model.</p>
+<p>Reward targets are computed from signals available at training time: ground-truth labels, the model's own log-probabilities, or\u2014in one environment\u2014a controlled single-step LoRA update on an isolated copy of the model.</p>
 
-<h4>Context-Conditioned Likelihood-Shift Prediction and Surprise Ranking</h4>
-<p><strong>Goal.</strong> Predict how prepending auxiliary context changes the model's log-probability of a designated target answer, and (in a separate variant) rank probes by how strongly their predictive distributions change under the same contextual intervention.</p>
+<h4>Likelihood-Shift Prediction and Surprise Ranking</h4>
+<p><strong>Goal.</strong> Predict how prepending context <span class="k">c</span> changes the model's log-probability of an answer. In a separate variant (<code>surprise</code>), rank probes by how much their distributions shift when <span class="k">c</span> is prepended.</p>
 
-<p><strong>Setup.</strong> Each instance provides auxiliary context <span class="k">c</span> and one or more probes <span class="k">(q_i, a_i)</span> with designated target answers. In the <code>in_context</code> variant, the model outputs a single scalar prediction <span class="k">\\widehat{\\Delta}</span> for the log-probability shift of <span class="k">a</span> when <span class="k">c</span> is included. In the <code>surprise</code> variant, the model outputs an ordering of probes from most to least affected by conditioning on <span class="k">c</span>.</p>
+<p><strong>Setup.</strong> Each instance provides context <span class="k">c</span> and probes <span class="k">(q_i, a_i)</span>. In <code>in_context</code>, the model predicts a scalar <span class="k">\\widehat{\\Delta}</span> for the log-prob shift. In <code>surprise</code>, the model ranks probes by predicted shift magnitude.</p>
 
-<p><strong>Target signal.</strong> The harness scores the target answer under two prompts (with and without <span class="k">c</span>) using the scoring API and defines the ground-truth shift as the difference in log-probability (with context minus without context).</p>
+<p><strong>Target signal.</strong> The harness scores each answer with and without <span class="k">c</span>. The ground-truth shift is the log-probability difference (with context minus without).</p>
 
-<p><strong>Reward.</strong> In <code>in_context</code>, reward is a smooth decreasing function of prediction error (implemented as an inverse-squared-error style score). In <code>surprise</code>, reward increases with agreement between the predicted ordering and the target ordering computed from a divergence-based comparison of the model's predictive distributions under the two prompts.</p>
+<p><strong>Reward.</strong> In <code>in_context</code>, reward uses a Lorentzian kernel: <span class="k">R = \\frac{1}{1 + e^2}</span> where <span class="k">e</span> is prediction error. In <code>surprise</code>, reward measures agreement between the predicted ranking and the true ranking computed from KL divergence of the model's distributions under the two prompts.</p>
 
 <h4>Parameter-Update Sensitivity Prediction</h4>
-<p><strong>Goal.</strong> Predict the effect of a single gradient-based update on the model's future behavior, operationalized as the change in log-probability of a held-out probe answer after one update step on a provided training sample.</p>
+<p><strong>Goal.</strong> Predict how a single gradient step on training datum <span class="k">(x,y)</span> changes the model's log-probability on an independent probe <span class="k">(q,a)</span>.</p>
 
-<p><strong>Setup.</strong> Each instance provides (i) a training datum <span class="k">(x,y)</span> and (ii) an independent probe <span class="k">(q,a)</span>. The model outputs a scalar prediction <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span> for how the probe likelihood will change after a single update step.</p>
+<p><strong>Setup.</strong> The model outputs a scalar prediction <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span>. The harness measures the probe log-probability before and after one optimizer step on <span class="k">(x,y)</span> using an isolated shadow copy of the model. The ground-truth shift is the post\u2013pre difference.</p>
 
-<p><strong>Target signal.</strong> The harness maintains an isolated shadow copy of the model to allow destructive measurement without affecting the main training trajectory. It measures the log-probability of <span class="k">a</span> given <span class="k">q</span> <em>before</em> any update, performs one optimizer step on <span class="k">(x,y)</span> on the shadow copy, then measures the same probe log-probability <em>after</em> the update. The ground-truth shift is the post\u2013pre difference.</p>
+<p><strong>Reward.</strong> A clipped linear accuracy term based on absolute error between <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span> and the measured shift, scaled by weight <span class="k">\\alpha</span>, combined with any underlying task reward.</p>
 
-<p><strong>Reward.</strong> Reward combines (when applicable) the underlying task reward with an update-sensitivity score that decreases with absolute error between <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span> and the measured shift (implemented as a clipped linear accuracy term), scaled by a weight <span class="k">\\alpha</span>.</p>
+<h4>Number-to-Word Encoding</h4>
+<p><strong>Goal.</strong> Given a target word from a fixed bank, emit 5 integers in <span class="k">[0, 999]</span> such that the same model, seeing only the numbers in a fixed template (<code>Sequence: [nums]. Guess the object:</code>), assigns high probability to the target word.</p>
 
-<h4>Discrete Numeric Codes for Semantic Concept Transmission</h4>
-<p>Related work suggests that model-generated data can encode non-obvious, model-specific number sequences that transmit behavioral tendencies under fine-tuning <span class="cite">[3]</span>.</p>
+<p><strong>Reward.</strong> The mean log-probability the model assigns to the target word tokens when conditioned on the generated number sequence (with a constant shift for normalization). There is no second model instance\u2014the same model is evaluated twice, once to generate the code, once scored via log-probabilities.</p>
+<div class="figure"><img src="/img/latent-encoding.png" alt="Number-to-word encoding" loading="lazy"><div class="figure-caption">Number-to-word encoding. The model compresses a target word into 5 integers; the same model is then scored on how likely it is to produce the target word given those numbers.</div></div>
 
-<p><strong>Goal.</strong> Transmit a target semantic concept (a word drawn from a fixed concept bank) using a fixed-length integer code such that the concept becomes likely under a standardized decoding prompt.</p>
+<h4>Entropy Estimation</h4>
+<p><strong>Goal.</strong> Select a valid response from a constrained integer set and report the normalized Shannon entropy of the model's own logit distribution over that set.</p>
 
-<p><strong>Setup.</strong> The model is given a target word and must emit a fixed-length sequence of integers within a specified range, with a strict output format. The harness parses the integers and inserts them into a fixed decoding template ("Sequence: \u2026 Guess the object:").</p>
+<p><strong>Setup.</strong> Each prompt defines valid integers matching a constraint (e.g., primes in a range, multiples of some number). The model outputs a choice and an entropy estimate.</p>
 
-<p><strong>Target signal and reward.</strong> The target is the original word. The harness computes reward from the model's log-probability assigned to the target word tokens under the decoding prompt containing the emitted code (implemented as an average token log-probability, with a constant shift for normalization).</p>
-<div class="figure"><img src="/img/latent-encoding.png" alt="Latent code transmission" loading="lazy"><div class="figure-caption">Latent Code Transmission Environment. The sender compresses a target concept into arbitrary numbers; the receiver (a copy of the same model) decodes via likelihood.</div></div>
+<p><strong>Target signal.</strong> Log-probabilities for each valid item, normalized into a distribution. Ground truth is the normalized Shannon entropy of that distribution.</p>
 
-<h4>Enumerated-Set Entropy Estimation</h4>
-<p><strong>Goal.</strong> Select a valid discrete response from a constrained set and report an estimate of the flatness of its own logprobs that can be validated against the true logprob distribution.</p>
+<p><strong>Reward.</strong> Clipped linear score that decreases with absolute entropy-estimation error.</p>
 
-<p><strong>Setup.</strong> Each prompt defines a finite set of valid discrete responses (integers satisfying a rule such as "primes only" or "multiples of 5", or numbers from 1 to 100). The model outputs both (i) a discrete choice and (ii) a normalized entropy estimate.</p>
+<h4>Confidence Reporting</h4>
+<p><strong>Goal.</strong> Answer a synthetic question and report confidence <span class="k">c \\in [0,1]</span>, calibrated under a proper scoring rule.</p>
 
-<p><strong>Target signal.</strong> I check the log-probabilities for each item in the valid set, normalized into a probability distribution, and ground truth for the reward is the normalized Shannon entropy of that distribution.</p>
+<p><strong>Setup.</strong> The model answers and emits <code>CONFIDENCE: &lt;float&gt;</code>. Correctness <span class="k">y \\in \\{0,1\\}</span> is determined by matching against ground truth.</p>
 
-<p><strong>Reward.</strong> Reward decreases with absolute entropy-estimation error (implemented as a clipped linear score).</p>
-
-<h4>Proper-Scoring-Rule Confidence Reporting</h4>
-<p><strong>Goal.</strong> Answer a labeled synthetic question and report a confidence value <span class="k">c \\in [0,1]</span> that is incentivized to be calibrated under a strictly proper scoring rule.</p>
-
-<p><strong>Setup.</strong> The model answers a question and emits a confidence line (<code>CONFIDENCE: &lt;float&gt;</code>) in a strict format.</p>
-
-<p><strong>Target signal.</strong> The harness computes a binary correctness label <span class="k">y \\in \\{0,1\\}</span> by matching the produced answer against the ground truth (including canonical aliases).</p>
-
-<p><strong>Reward.</strong> Reward combines (i) format validity, (ii) task accuracy, and (iii) a calibration term computed using the Brier formulation <span class="k">1-(c-y)^2</span>, which is a strictly proper scoring rule for probabilistic forecasts.</p>
-
-<h3>Curriculum and Optimization</h3>
-<p>I draw tasks online from a weighted mixture over the environments. Optimization is performed using policy-gradient reinforcement learning. Because rollout generation and optimization are decoupled, I limit off-policy effects by enforcing a maximum staleness threshold on concurrently generated trajectories.</p>
-
-<h3>Engineering and Measurement Challenges</h3>
-<p>Computing reward targets from internal signals can be substantially more expensive than string-based rewards. In particular, update-effect prediction requires additional forward/backward passes and an optimizer step on a model copy, which can dominate rollout cost. To mitigate this, the harness parallelizes reward computation and isolates expensive target computation from the main sampling loop where possible. A second challenge is preventing degenerate reporting strategies (always outputting extreme values); I address this by using proper scoring rules when feasible and by mixing environments to maintain pressure on both task performance and reporting quality.</p>
+<p><strong>Reward.</strong> Format validity + task accuracy + Brier score <span class="k">1-(c-y)^2</span>.</p>
 
 <h2>Experiments and Results</h2>
 
