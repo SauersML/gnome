@@ -397,11 +397,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p>The staleness filter compensates for both: if a trajectory was sampled more than <code>max_steps_off_policy</code> steps ago, it is discarded and the prompt is re-queued. This bounds importance ratio variance by throwing away bad data rather than squashing the gradient.</p>
 
 <h3>Asynchronous Multi-Task RL Harness</h3>
-<p>The async architecture is why importance sampling is necessary. Three concurrent coroutines run simultaneously: a <strong>dataloader</strong> that queues prompts from a weighted multi-task curriculum, multiple <strong>trajectory workers</strong> that sample completions using the current model snapshot, and a <strong>training loop</strong> that consumes trajectories and updates the model. While batch <span class="k">t</span> is being trained on, batch <span class="k">t+1</span> is already being sampled\u2014meaning the sampling policy lags behind the training policy. Standard GRPO cannot handle this because it assumes on-policy data. The importance ratio corrects for the drift.</p>
-
-<p>To reduce update latency, training supports streaming micro-batches. Trajectory groups are fed to the training server as they arrive rather than waiting for the full batch, maximizing GPU utilization by overlapping network transfer with computation.</p>
-
-<p>The harness periodically saves model state (including LoRA adapters), optimizer state, random seeds, and curriculum indices to allow pause/resume under preemptible compute. For efficiency, I apply LoRA updates rather than full-parameter fine-tuning.</p>
+<p>The reinforcement learning harness decouples inference from optimization. It has an asynchronous producer\u2013consumer pipeline, with a loader that produces environment instances, a pool of workers that runs inference, a reward calculator, and a trainer that performs updates. I train on a mixture of all of the environments.</p>
 
 <h3>Synthetic Environments for Self-Prediction</h3>
 <p>I train on a curriculum of synthetic environments where reward targets are computed from signals available at training time: either ground-truth labels from a generator, or quantities obtained through the model scoring interface (log-probabilities), and\u2014in one environment\u2014through a controlled single-step parameter update on an isolated copy of the model.</p>
