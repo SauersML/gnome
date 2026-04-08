@@ -385,14 +385,21 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <h2>Approach</h2>
 
 <h3>Training Objective</h3>
-<p>I use a multi-objective reinforcement learning setup in which the total reward is a weighted sum of terms:</p>
+<p>The total reward is a weighted sum of task-specific terms:</p>
 <div class="tex-block"><span class="kb">R = \\lambda_{\\text{task}} R_{\\text{task}} + \\lambda_{\\text{cal}} R_{\\text{cal}} + \\lambda_{\\text{pred}} R_{\\text{pred}} \\, , \\ldots</span></div>
-<p>where <span class="k">R_{\\text{task}}</span> rewards task performance (when applicable), <span class="k">R_{\\text{cal}}</span> rewards calibration-related reporting, and <span class="k">R_{\\text{pred}}</span> rewards prediction of training-time targets derived from token-level likelihoods and simulated update effects. The weights <span class="k">\\lambda</span> define the trade-off among performance and reporting accuracy.</p>
+<p>where <span class="k">R_{\\text{task}}</span> rewards task performance (when applicable), <span class="k">R_{\\text{cal}}</span> rewards calibration-related reporting, and <span class="k">R_{\\text{pred}}</span> rewards prediction of training-time targets derived from token-level likelihoods and simulated update effects.</p>
+
+<p>The optimization uses importance-sampled policy gradients\u2014essentially unregularized async GRPO. The core structure is GRPO: a group of <span class="k">G</span> rollouts per prompt, rewards computed per completion, advantages normalized within the group (the group mean serves as the baseline), and no learned value function. However, two standard safety rails are removed:</p>
+<ul>
+<li><strong>No KL penalty.</strong> Standard GRPO adds <span class="k">-\\beta \\cdot D_{KL}(\\pi_\\theta \\| \\pi_{\\text{ref}})</span> to prevent policy drift from a frozen reference. Here there is no reference model at all.</li>
+<li><strong>Raw importance ratios instead of clipping.</strong> Rather than PPO's clipped surrogate <span class="k">\\min(r_t \\hat{A},\\, \\text{clip}(r_t, 1 \\pm \\epsilon)\\hat{A})</span>, the loss uses unclipped importance-weighted gradients. The importance ratio <span class="k">\\frac{\\pi_\\theta(a|s)}{\\pi_{\\text{old}}(a|s)}</span> corrects for the fact that samples may be stale (sampled under an older policy snapshot).</li>
+</ul>
+<p>The staleness filter compensates for both: if a trajectory was sampled more than <code>max_steps_off_policy</code> steps ago, it is discarded and the prompt is re-queued. This bounds importance ratio variance by throwing away bad data rather than squashing the gradient.</p>
 
 <h3>Asynchronous Multi-Task RL Harness</h3>
-<p>I implement a reinforcement learning harness designed to maintain high utilization by decoupling rollout generation from optimization. The system uses an asynchronous producer\u2013consumer pipeline with bounded queues: a loader continuously produces environment instances from a weighted multi-task curriculum, a pool of rollout workers generates trajectories using the current inference service, and a trainer consumes completed trajectories to perform gradient updates. An evaluation loop runs in parallel, triggered by model updates, and does not block training.</p>
+<p>The async architecture is why importance sampling is necessary. Three concurrent coroutines run simultaneously: a <strong>dataloader</strong> that queues prompts from a weighted multi-task curriculum, multiple <strong>trajectory workers</strong> that sample completions using the current model snapshot, and a <strong>training loop</strong> that consumes trajectories and updates the model. While batch <span class="k">t</span> is being trained on, batch <span class="k">t+1</span> is already being sampled\u2014meaning the sampling policy lags behind the training policy. Standard GRPO cannot handle this because it assumes on-policy data. The importance ratio corrects for the drift.</p>
 
-<p>To reduce update latency and avoid large buffering, training supports streaming micro-batches. Trajectories are consumed incrementally, and as soon as enough items are available to form a valid micro-batch, they are dispatched for a gradient update.</p>
+<p>To reduce update latency, training supports streaming micro-batches. Trajectory groups are fed to the training server as they arrive rather than waiting for the full batch, maximizing GPU utilization by overlapping network transfer with computation.</p>
 
 <p>The harness periodically saves model state (including LoRA adapters), optimizer state, random seeds, and curriculum indices to allow pause/resume under preemptible compute. For efficiency, I apply LoRA updates rather than full-parameter fine-tuning.</p>
 
@@ -454,7 +461,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <h2>Experiments and Results</h2>
 
 <h3>Training</h3>
-<p>I trained Qwen-30B-A3B using PPO/GRPO, totaling 188 million tokens generated. I use a LoRA rank of 32 with a very large batch size of 1,204. 64 unique prompts are sampled per step, and 16 responses are generated per-prompt.</p>
+<p>I trained Qwen-30B-A3B using importance-sampled policy gradients (unregularized async GRPO), totaling 188 million tokens generated. I use a LoRA rank of 32 with a batch size of 1,204. 64 unique prompts are sampled per step, and 16 responses are generated per-prompt.</p>
 
 <p>Training did not appear to stably increase over time, perhaps due to requiring a larger model or simply needing additional training steps. Inference and training cost $44.50 in total. When running evaluations at intermediate checkpoints, I noticed a pattern in which the model would flip from being equal or worse on the task to slightly better than the default Qwen-30B-A3B model.</p>
 
