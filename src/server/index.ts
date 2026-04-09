@@ -420,16 +420,16 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <div class="figure"><img src="/img/latent-encoding.png" alt="Number-to-word encoding" loading="lazy"><div class="figure-caption">Number-to-word encoding. The model compresses a target word into 5 integers; the same model is then scored on how likely it is to produce the target word given those numbers.</div></div>
 
 <h4>Entropy Estimation</h4>
-<p><strong>Goal.</strong> Select a valid response from a constrained integer set and report the normalized Shannon entropy of the model's own logit distribution over that set.</p>
+<p><strong>Goal.</strong> Guess the entropy (i.e., flatness, or uncertainty) of the model's own logit distribution.</p>
 
-<p><strong>Setup.</strong> Each prompt defines valid integers matching a constraint (e.g., primes in a range, multiples of some number). The model outputs a choice and an entropy estimate.</p>
+<p><strong>Setup.</strong> Each prompt mentions a set containing some integers (e.g., primes in a range, multiples of some number). The model outputs a choice of one integer and an entropy estimate.</p>
 
-<p><strong>Target signal.</strong> Log-probabilities for each valid item, normalized into a distribution. Ground truth is the normalized Shannon entropy of that distribution.</p>
+<p><strong>Target signal.</strong> Log-probabilities for each item. Ground truth is the normalized Shannon entropy over this distribution.</p>
 
 <p><strong>Reward.</strong> Clipped linear score that decreases with absolute entropy-estimation error.</p>
 
 <h4>Confidence Reporting</h4>
-<p><strong>Goal.</strong> Answer a synthetic question and report confidence <span class="k">c \\in [0,1]</span>, calibrated under a proper scoring rule.</p>
+<p><strong>Goal.</strong> Answer a question and report confidence.</p>
 
 <p><strong>Setup.</strong> The model answers and emits <code>CONFIDENCE: &lt;float&gt;</code>. Correctness <span class="k">y \\in \\{0,1\\}</span> is determined by matching against ground truth.</p>
 
