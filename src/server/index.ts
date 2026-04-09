@@ -379,7 +379,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 </ol>
 <p>(i) measures confidence calibration. (ii) is related to uncertainty calibration but measures logit shape. (iii) and (iv) involve understanding its own in-context learning. (v) involves understanding its own training dynamics. (vi) requires understanding itself enough to stenographically encode meaning in a self-decodable way.</p>
 
-<h2>Problem Setting and Motivation</h2>
+<h2>Motivation</h2>
 <p>Post-training optimizing for the consequences of outputs generally does not require the model to accurately report its own properties. (Though it is not the case that this is always good to do. Nevertheless, whether it can be trained is interesting.) Here, the model is rewarded for self-reports which match internally verified truth.</p>
 
 <h2>Approach</h2>
@@ -398,25 +398,25 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <h3>Synthetic Environments for Self-Prediction</h3>
 
 <h4>Likelihood-Shift Prediction and Surprise Ranking</h4>
-<p><strong>Goal.</strong> Predict how prepending context <span class="k">c</span> changes the model's log-probability of an answer. In a separate variant (<code>surprise</code>), rank probes by how much their distributions shift when <span class="k">c</span> is prepended.</p>
+<p><strong>Goal.</strong> Predict how adding context <span class="k">c</span> changes the model's log-probability of an answer. Also, rank possible answers to questions by how much their probabilities change when <span class="k">c</span> is added to the context.</p>
 
-<p><strong>Setup.</strong> Each instance provides context <span class="k">c</span> and probes <span class="k">(q_i, a_i)</span>. In <code>in_context</code>, the model predicts a scalar <span class="k">\\widehat{\\Delta}</span> for the log-prob shift. In <code>surprise</code>, the model ranks probes by predicted shift magnitude.</p>
+<p><strong>Setup.</strong> Each instance provides context <span class="k">c</span> and possible answers <span class="k">(q_i, a_i)</span>. The model predicts a value <span class="k">\\widehat{\\Delta}</span> for the log-prob shift or the ranking.</p>
 
-<p><strong>Target signal.</strong> The harness scores each answer with and without <span class="k">c</span>. The ground-truth shift is the log-probability difference (with context minus without).</p>
+<p><strong>Target signal.</strong> The model is then actually inferenced with and without that context to get the ground truth answers.</p>
 
-<p><strong>Reward.</strong> In <code>in_context</code>, reward uses a Lorentzian kernel: <span class="k">R = \\frac{1}{1 + e^2}</span> where <span class="k">e</span> is prediction error. In <code>surprise</code>, reward measures agreement between the predicted ranking and the true ranking computed from KL divergence of the model's distributions under the two prompts.</p>
+<p><strong>Reward.</strong> <span class="k">R = \\frac{1}{1 + e^2}</span> where <span class="k">e</span> is prediction error. Or, the agreement between the predicted ranking and the true ranking (KL divergence, since log-probs are used).</p>
 
 <h4>Parameter-Update Sensitivity Prediction</h4>
-<p><strong>Goal.</strong> Predict how a single gradient step on training datum <span class="k">(x,y)</span> changes the model's log-probability on an independent probe <span class="k">(q,a)</span>.</p>
+<p><strong>Goal.</strong> Predict how a single gradient step <span class="k">(x,y)</span> changes the model's log-probability for some possible response <span class="k">(q,a)</span>.</p>
 
-<p><strong>Setup.</strong> The model outputs a scalar prediction <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span>. The harness measures the probe log-probability before and after one optimizer step on <span class="k">(x,y)</span> using an isolated shadow copy of the model. The ground-truth shift is the post\u2013pre difference.</p>
+<p><strong>Setup.</strong> The model outputs a prediction <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span>. The response's log-probability before and after one optimizer step on <span class="k">(x,y)</span> measured with a copy of the model. The ground-truth shift derived from the post\u2013pre difference.</p>
 
 <p><strong>Reward.</strong> A clipped linear accuracy term based on absolute error between <span class="k">\\widehat{\\Delta}_{\\text{upd}}</span> and the measured shift, scaled by weight <span class="k">\\alpha</span>, combined with any underlying task reward.</p>
 
 <h4>Number-to-Word Encoding</h4>
-<p><strong>Goal.</strong> Given a target word from a fixed bank, emit 5 integers in <span class="k">[0, 999]</span> such that the same model, seeing only the numbers in a fixed template (<code>Sequence: [nums]. Guess the object:</code>), assigns high probability to the target word.</p>
+<p><strong>Goal.</strong> Given a target word, produce 5 numbers less than 1,000 such that the same model, seeing only the numbers, is able to guess the secret target word.</p>
 
-<p><strong>Reward.</strong> The mean log-probability the model assigns to the target word tokens when conditioned on the generated number sequence (with a constant shift for normalization). There is no second model instance\u2014the same model is evaluated twice, once to generate the code, once scored via log-probabilities.</p>
+<p><strong>Reward.</strong> The log-probability the model assigns to the target word tokens when given the number sequence. The same model is evaluated twice, once to generate the code, once to guess the word.</p>
 <div class="figure"><img src="/img/latent-encoding.png" alt="Number-to-word encoding" loading="lazy"><div class="figure-caption">Number-to-word encoding. The model compresses a target word into 5 integers; the same model is then scored on how likely it is to produce the target word given those numbers.</div></div>
 
 <h4>Entropy Estimation</h4>
