@@ -281,9 +281,11 @@ void main() {
     float scale = 100.0;
     vec3 lr = xyzToRGB(totalXYZ * scale);
 
-    float r = baseColor.x + lr.x;
-    float g = baseColor.y + lr.y;
-    float b = baseColor.z + lr.z;
+    // Mouse proximity lifts dark pixels slightly
+    float glow = mouseBoost * 12.0;
+    float r = baseColor.x + lr.x + glow * (0.3 + 0.7 * hash(cell, 500.0));
+    float g = baseColor.y + lr.y + glow * (0.5 + 0.5 * hash(cell, 501.0));
+    float b = baseColor.z + lr.z + glow * (0.4 + 0.6 * hash(cell, 502.0));
 
     // Clamp to 0-255
     r = clamp(r, 0.0, 255.0);
