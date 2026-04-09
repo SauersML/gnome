@@ -731,14 +731,6 @@ export class Chat extends Server<Env> {
 			}
 		}
 
-		// Remove non-default pages (one-time cleanup)
-		const defaultSlugs = new Set(DEFAULT_PAGES.map((p) => p.slug));
-		const nonDefault = this.pages.filter((p) => !defaultSlugs.has(p.slug));
-		for (const p of nonDefault) {
-			this.ctx.storage.sql.exec(`DELETE FROM pages WHERE slug = ?`, p.slug);
-		}
-		this.pages = this.pages.filter((p) => defaultSlugs.has(p.slug));
-
 		const cssRow = this.ctx.storage.sql
 			.exec(`SELECT value FROM kv WHERE key = 'custom_css'`)
 			.toArray();
