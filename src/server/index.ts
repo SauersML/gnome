@@ -389,18 +389,11 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <div class="tex-block"><span class="kb">R = \\lambda_{\\text{task}} R_{\\text{task}} + \\lambda_{\\text{cal}} R_{\\text{cal}} + \\lambda_{\\text{pred}} R_{\\text{pred}} \\, , \\ldots</span></div>
 <p>where <span class="k">R_{\\text{task}}</span> rewards task performance (when applicable), <span class="k">R_{\\text{cal}}</span> rewards calibration-related reporting, and <span class="k">R_{\\text{pred}}</span> rewards prediction of training-time targets derived from token-level likelihoods and simulated update effects.</p>
 
-<p>The optimization uses importance-sampled policy gradients\u2014essentially unregularized async GRPO. The core structure is GRPO: a group of <span class="k">G</span> rollouts per prompt, rewards computed per completion, advantages normalized within the group (the group mean serves as the baseline), and no learned value function. However, two standard safety rails are removed:</p>
+<p>The optimization uses importance-sampled policy gradients, which is like unregularized async GRPO. The core structure is GRPO: a group of <span class="k">G</span> rollouts per prompt, rewards computed per completion, advantages normalized within the group (the group mean serves as the baseline), and no learned value function. However, there are two modifications for computational efficiency:</p>
 <ul>
-<li><strong>No KL penalty.</strong> Standard GRPO adds <span class="k">-\\beta \\cdot D_{KL}(\\pi_\\theta \\| \\pi_{\\text{ref}})</span> to prevent policy drift from a frozen reference. Here there is no reference model at all.</li>
-<li><strong>Raw importance ratios instead of clipping.</strong> Rather than PPO's clipped surrogate <span class="k">\\min(r_t \\hat{A},\\, \\text{clip}(r_t, 1 \\pm \\epsilon)\\hat{A})</span>, the loss uses unclipped importance-weighted gradients. The importance ratio <span class="k">\\frac{\\pi_\\theta(a|s)}{\\pi_{\\text{old}}(a|s)}</span> corrects for the fact that samples may be stale (sampled under an older policy snapshot).</li>
+<li><strong>No KL penalty.</strong> Standard GRPO adds <span class="k">-\\beta \\cdot D_{KL}(\\pi_\\theta \\| \\pi_{\\text{ref}})</span>. Here there is no reference model at all.</li>
+<li><strong>Raw importance ratios instead of clipping.</strong> Rather than PPO's clipped surrogate <span class="k">\\min(r_t \\hat{A},\\, \\text{clip}(r_t, 1 \\pm \\epsilon)\\hat{A})</span>, the loss uses unclipped importance-weighted gradients. The importance ratio <span class="k">\\frac{\\pi_\\theta(a|s)}{\\pi_{\\text{old}}(a|s)}</span> corrects for the fact that samples may be stale. If a trajectory was sampled more than <code>max_steps_off_policy</code> steps ago, it is discarded and the prompt is re-queued.</li>
 </ul>
-<p>The staleness filter compensates for both: if a trajectory was sampled more than <code>max_steps_off_policy</code> steps ago, it is discarded and the prompt is re-queued. This bounds importance ratio variance by throwing away bad data rather than squashing the gradient.</p>
-
-<h3>Asynchronous Multi-Task RL Harness</h3>
-<p>The reinforcement learning harness decouples inference from optimization. It has an asynchronous producer\u2013consumer pipeline, with a loader that produces environment instances, a pool of workers that runs inference, a reward calculator, and a trainer that performs updates. I train on a mixture of all of the environments.</p>
-
-<h3>Synthetic Environments for Self-Prediction</h3>
-<p>Reward targets are computed from signals available at training time: ground-truth labels, the model's own log-probabilities, or\u2014in one environment\u2014a controlled single-step LoRA update on an isolated copy of the model.</p>
 
 <h4>Likelihood-Shift Prediction and Surprise Ranking</h4>
 <p><strong>Goal.</strong> Predict how prepending context <span class="k">c</span> changes the model's log-probability of an answer. In a separate variant (<code>surprise</code>), rank probes by how much their distributions shift when <span class="k">c</span> is prepended.</p>
