@@ -491,7 +491,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <ul>
 <li><strong>Generalization across introspection domains.</strong> I observed no evidence for transfer between different forms of self-prediction. How do we enable and improve generalized self-prediction, especially of internal state? Do we give the models new tools to access various internal states? Larger models? More diverse training?</li>
 <li><strong>Reasoning-behavior mismatch.</strong> Frequently, the model's generated reasoning traces accurately predicted low confidence, yet the final choice was confident.</li>
-<li><strong>Transparency.</strong> It's difficult to determine why the model failed to improve on some tasks yet did much better on the latent encoding task.</li>
+<li><strong>Interpretation.</strong> It's hard to tell why the model failed to improve on some tasks yet did much better on the latent encoding task.</li>
 </ul>
 
 <p>A critical theoretical tension exists between this methodology and recent findings on anti-scheming training. Schoen et al. <span class="cite">[4]</span> identify situational awareness and introspection as necessary precursors for covertly misaligned behavior, such as strategic underperformance or gradient manipulation. Under that framework, increasing a model's capacity to reason about its own training process could arguably increase the risk of scheming. However, this work proceeds from the opposing hypothesis: that verifying self-reports against ground-truth internal signals acts as a constraint mechanism. That is, honesty is a form of accurate self-prediction and reporting. Resolving whether self-prediction serves as a capability amplifier for scheming or a mechanism for honesty remains an open question.</p>
