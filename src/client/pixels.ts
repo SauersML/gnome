@@ -138,7 +138,7 @@ void main() {
     // ─── Mouse proximity boost ───
     float mouseDist = length(vec2(nx, ny) - u_mouse);
     float mouseBoost = exp(-mouseDist * mouseDist / (2.0 * 0.06));  // smooth ~0.25 radius falloff
-    float speedMul = 1.0 + mouseBoost * 1.5;   // up to 2.5x speed near cursor
+    float speedMul = 1.0 + mouseBoost * 0.6;   // up to 1.6x speed near cursor
     float ampMul = 1.0 + mouseBoost * 0.8;     // up to 1.8x intensity near cursor
 
     // ─── Sweeping hue waves ───
