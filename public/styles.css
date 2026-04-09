@@ -613,16 +613,16 @@ html, body {
 	max-width: 100%;
 	width: 100%;
 	height: auto;
-	border-radius: 6px;
+	border-radius: 0;
 	display: block;
 }
 
 .article-body .figure {
 	margin: 32px 0;
 	background: rgba(255, 255, 255, 0.03);
-	border-radius: 8px;
+	border-radius: 0;
 	padding: 16px;
-	overflow: hidden;
+	overflow: visible;
 }
 
 .article-body .figure-caption {
