@@ -138,25 +138,24 @@ void main() {
     // ─── Mouse proximity boost ───
     float mouseDist = length(vec2(nx, ny) - u_mouse);
     float mouseBoost = 1.0 / (1.0 + mouseDist * mouseDist * 60.0);  // inverse-square dropoff from cursor
-    float speedMul = 1.0 + mouseBoost * 0.6;   // up to 1.6x speed near cursor
     float ampMul = 1.0 + mouseBoost * 0.8;     // up to 1.8x intensity near cursor
 
     // ─── Sweeping hue waves ───
     // 4 rotating wave fronts at irrational-ratio speeds so they never repeat
-    float w1a = s * 0.17 * speedMul;
-    float w2a = s * 0.13 * speedMul + 2.1;
-    float w3a = s * 0.09 * speedMul + 4.3;
-    float w4a = s * 0.23 * speedMul + 1.0;
+    float w1a = s * 0.17;
+    float w2a = s * 0.13 + 2.1;
+    float w3a = s * 0.09 + 4.3;
+    float w4a = s * 0.23 + 1.0;
     vec2 w1d = vec2(cos(w1a), sin(w1a));
     vec2 w2d = vec2(cos(w2a), sin(w2a));
     vec2 w3d = vec2(cos(w3a), sin(w3a));
     vec2 w4d = vec2(cos(w4a), sin(w4a));
 
     // Each wave has different spatial frequency for complex interference
-    float sw1 = sin(dot(vec2(nx, ny), w1d) * 7.0 + s * 0.35 * speedMul) * ampMul;
-    float sw2 = sin(dot(vec2(nx, ny), w2d) * 5.0 + s * 0.28 * speedMul) * ampMul;
-    float sw3 = sin(dot(vec2(nx, ny), w3d) * 11.0 + s * 0.22 * speedMul) * ampMul;
-    float sw4 = sin(dot(vec2(nx, ny), w4d) * 3.5 + s * 0.40 * speedMul) * ampMul;
+    float sw1 = sin(dot(vec2(nx, ny), w1d) * 7.0 + s * 0.35) * ampMul;
+    float sw2 = sin(dot(vec2(nx, ny), w2d) * 5.0 + s * 0.28) * ampMul;
+    float sw3 = sin(dot(vec2(nx, ny), w3d) * 11.0 + s * 0.22) * ampMul;
+    float sw4 = sin(dot(vec2(nx, ny), w4d) * 3.5 + s * 0.40) * ampMul;
 
     // Absorption center: 4 wave components + per-pixel phase for rich shifting
     float hueMul = 1.0 + mouseBoost * 1.2;  // wider hue range near cursor
