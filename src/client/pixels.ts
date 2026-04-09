@@ -152,10 +152,11 @@ void main() {
     vec2 w4d = vec2(cos(w4a), sin(w4a));
 
     // Each wave has different spatial frequency for complex interference
-    float sw1 = sin(dot(vec2(nx, ny), w1d) * 7.0 + s * 0.35) * ampMul;
-    float sw2 = sin(dot(vec2(nx, ny), w2d) * 5.0 + s * 0.28) * ampMul;
-    float sw3 = sin(dot(vec2(nx, ny), w3d) * 11.0 + s * 0.22) * ampMul;
-    float sw4 = sin(dot(vec2(nx, ny), w4d) * 3.5 + s * 0.40) * ampMul;
+    // Mouse adds a rapid phase shimmer that fades in/out smoothly (no jumps)
+    float sw1 = sin(dot(vec2(nx, ny), w1d) * 7.0 + s * 0.35 + mouseBoost * sin(s * 3.5) * 0.5) * ampMul;
+    float sw2 = sin(dot(vec2(nx, ny), w2d) * 5.0 + s * 0.28 + mouseBoost * sin(s * 4.3) * 0.5) * ampMul;
+    float sw3 = sin(dot(vec2(nx, ny), w3d) * 11.0 + s * 0.22 + mouseBoost * sin(s * 5.1) * 0.4) * ampMul;
+    float sw4 = sin(dot(vec2(nx, ny), w4d) * 3.5 + s * 0.40 + mouseBoost * sin(s * 3.0) * 0.5) * ampMul;
 
     // Absorption center: 4 wave components + per-pixel phase for rich shifting
     float hueMul = 1.0 + mouseBoost * 1.2;  // wider hue range near cursor
