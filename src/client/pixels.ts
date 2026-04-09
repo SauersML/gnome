@@ -290,10 +290,12 @@ void main() {
     g = clamp(g, 0.0, 255.0);
     b = clamp(b, 0.0, 255.0);
 
-    // Text halo dimming — mouse lifts halo-edge pixels but not deep-text ones
+    // Text halo dimming — mouse lifts halo-edge pixels but not on-text ones
     vec2 haloUV = (cell + 0.5) / u_gridSize;
     float dim = texture2D(u_halo, haloUV).r;
-    float lift = mouseBoost * smoothstep(0.0, 0.4, dim) * 0.7;
+    // dim=0: directly on text, never lift. dim>=1/255: in halo zone, liftable.
+    float canLift = smoothstep(0.0, 0.006, dim);
+    float lift = mouseBoost * canLift * 0.25;
     dim = min(1.0, dim + lift);
     r *= dim;
     g *= dim;
@@ -439,7 +441,10 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 						const noise = (Math.abs(hash(col, row, 919)) % 1000) / 1000;
 						const sensitivity = 0.3 + noise * 0.7;
 						const dim = Math.max(0, 1.0 - (p * p) / (sensitivity * sensitivity));
-						const v = (dim * 255) | 0;
+						let v = (dim * 255) | 0;
+						// Outside text rect but halo-dark: encode as 1 so shader
+						// can distinguish from on-text (0) pixels
+						if (v === 0 && d > 0.5) v = 1;
 						const idx = row * cols + col;
 						if (v < haloData[idx]) haloData[idx] = v;
 					}
