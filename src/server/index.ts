@@ -731,12 +731,11 @@ export class Chat extends Server<Env> {
 			}
 		}
 
-		const cssRow = this.ctx.storage.sql
-			.exec(`SELECT value FROM kv WHERE key = 'custom_css'`)
-			.toArray();
-		if (cssRow.length > 0) {
-			this.customCss = cssRow[0].value as string;
-		}
+		// One-time CSS reset
+		this.ctx.storage.sql.exec(`INSERT INTO kv (key, value) VALUES ('custom_css', '') ON CONFLICT (key) DO UPDATE SET value = ''`);
+		this.ctx.storage.sql.exec(`INSERT INTO kv (key, value) VALUES ('css_updated_at', '0') ON CONFLICT (key) DO UPDATE SET value = '0'`);
+		this.customCss = "";
+		this.cssUpdatedAt = 0;
 
 		const tsRow = this.ctx.storage.sql
 			.exec(`SELECT value FROM kv WHERE key = 'css_updated_at'`)
