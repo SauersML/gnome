@@ -425,6 +425,7 @@ html, body {
 	z-index: 1;
 	scrollbar-width: thin;
 	scrollbar-color: var(--moss) transparent;
+	font-size: clamp(18px, 2vw, 20px);
 }
 
 .article-page::-webkit-scrollbar { width: 6px; }
