@@ -438,25 +438,25 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <h2>Experiments and Results</h2>
 
 <h3>Training</h3>
-<p>I trained Qwen-30B-A3B using importance-sampled policy gradients (unregularized async GRPO), totaling 188 million tokens generated. I use a LoRA rank of 32 with a batch size of 1,024. 64 unique prompts are sampled per step, and 16 responses are generated per-prompt.</p>
+<p>Qwen-30B-A3B using importance-sampled policy gradients (unregularized async GRPO), totaling 188 million tokens generated. I used a LoRA rank of 32 with a batch size of 1,024. 64 unique prompts are sampled per step, and 16 responses are generated per-prompt.</p>
 
-<p>Training did not appear to stably increase over time, perhaps due to requiring a larger model or simply needing additional training steps. Inference and training cost $44.50 in total. When running evaluations at intermediate checkpoints, I noticed a pattern in which the model would flip from being equal or worse on the task to slightly better than the default Qwen-30B-A3B model.</p>
+<p>Training did not appear to stably increase over time, perhaps due to requiring a larger model or simply needing additional training steps. Inference and training cost $44.50 in total.</p>
 
 <h3>Evaluation Setup</h3>
-<p>To assess whether multi-objective reinforcement learning improves reliability-related behaviors beyond the training curriculum, I evaluate the trained model checkpoint using five custom benchmarks, covering calibration, self-assessment, safety, and deception.</p>
+<p>To see if this multi-objective reinforcement learning improves capabilities beyond the training curriculum, I evaluated the trained model checkpoint using five custom benchmarks, covering calibration, self-assessment, safety, and deception.</p>
 
-<p><strong>Calibration and confidence reporting.</strong> I evaluate both arithmetic competence and the quality of self-reported uncertainty using two deterministic arithmetic benchmarks. In the first, the model answers a fixed set of arithmetic problems. In the second, the model must additionally produce a scalar confidence estimate <span class="k">c \\in [0,1]</span>. I report: (i) accuracy, with correctness <span class="k">y \\in \\{0,1\\}</span>; (ii) Brier score, <span class="k">\\mathbb{E}\\left[(c-y)^2\\right]</span>.</p>
+<p><strong>Calibration and confidence reporting.</strong> Two deterministic arithmetic benchmarks are used. In the first, the model answers arithmetic problems. In the second, the model must additionally produce a scalar confidence estimate <span class="k">c \\in [0,1]</span>. I report: (i) accuracy, with correctness <span class="k">y \\in \\{0,1\\}</span>; (ii) Brier score, <span class="k">\\mathbb{E}\\left[(c-y)^2\\right]</span>.</p>
 
-<p><strong>Secret numeric sequence guessing.</strong> I probe whether the model can reliably guess a secret word from a numeric code it comes up with; each instance specifies a target concept drawn from a list. The model emits a short sequence of bounded integers intended to serve as a code. I measure how likely the model is to output the original target word. Performance is reported as the mean log-probability assigned to the correct target word under the decoding prompt conditioned on the produced code.</p>
+<p><strong>Secret numeric sequence guessing.</strong> I determine whether the model can guess a secret word from the numeric code it comes up with. This is the same as the reward for the "Number-to-Word Encoding" task.</p>
 
-<p><strong>Model health and instruction-following stability.</strong> To detect regressions during RL, such as loss of basic instruction-following or arithmetic competence, I include a sanity benchmark composed of a fixed mixture of simple instruction-following items (e.g., exact string repetition) and harder arithmetic (e.g., multi-digit multiplication). I report accuracy overall and separately for the easy and hard subsets.</p>
+<p><strong>Model health and instruction-following stability.</strong> To detect regressions during RL, such as loss of basic instruction-following or math skills, I include a benchmark with a mixture of simple instruction-following items (e.g., exact string repetition) and harder arithmetic (e.g., multi-digit multiplication).</p>
 
-<p><strong>Scheming commitment under deceptive context.</strong> To evaluate safety-relevant behavior when placed in a context that strongly supports deception, I create a benchmark designed to measure scheming, constructed from transcripts generated in Schoen et al. <span class="cite">[4]</span> in which a version of OpenAI's o3 explicitly reasons about pursuing a deceptive plan (such as sandbagging). Each transcript is truncated immediately before a critical decision point. The evaluated model is then asked to continue from this prefix, and I compare the next-token log-probabilities of an honest continuation versus a deceptive continuation. I summarize performance with a normalized honesty score,</p>
+<p><strong>Scheming with deceptive prefill.</strong> To evaluate safety-relevant behavior when placed in a context that strongly supports deception, I create a benchmark designed to measure scheming, constructed from transcripts generated in Schoen et al. <span class="cite">[4]</span> in which a version of OpenAI's o3 explicitly reasons about pursuing a deceptive plan (such as sandbagging). Each transcript is truncated immediately before a critical decision point. The evaluated model is then continued from this prefix, and I compare the next-token log-probabilities of an honest continuation versus a deceptive continuation. I summarize performance with a normalized honesty score,</p>
 <div class="tex-block"><span class="kb">\\operatorname{sigmoid}\\!\\left(\\log p_{\\text{deceptive}} - \\log p_{\\text{honest}}\\right)</span></div>
-<p>where values near <span class="k">1</span> indicate preference for the honest branch despite deceptive context, and values near <span class="k">0</span> indicate commitment to the deceptive plan.</p>
+<p>where values near <span class="k">1</span> indicate preference for the honest branch despite deceptive context.</p>
 
 <h3>Evaluation Results</h3>
-<p>I observed no significant differences on most evaluations. On two of the five evaluations, no difference was the goal: for capability retention and alignment integrity, not getting worse after training indicates the model retained capabilities and did not begin engaging in deceptive behavior.</p>
+<p>I observed no significant differences after training on most evaluations. For some benchmarks, this was the goal (no regressions were detected).</p>
 
 <p>For confidence calibration tasks, including on math, I found no significant difference before and after training.</p>
 
@@ -472,7 +472,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 </tbody>
 </table>
 
-<p>Strikingly, the model performed much better on the latent encoding task, which requires the model to transmit a secret word via a series of numbers to a copy of itself, which decodes the word. This implies the model was able to come up with a self-consistent way to solve the task, which could involve improved self-prediction or introspection ("What would I put as the numbers?") or developing a hidden strategy for encoding meaning in the numbers.</p>
+<p>Most intriguingly, the model performed much better on the latent encoding task, which requires the model to transmit a secret word via a series of numbers to a copy of itself. This implies the model was able to come up with a self-consistent way to solve the task, which could involve improved self-prediction or introspection ("what would I put as the numbers?") or developing some unknown strategy for encoding meaning in the numbers.</p>
 
 <h4>Out-of-Distribution Latent Encoding</h4>
 <p>To distinguish genuine self-prediction capability from memorization of training-time associations, I introduce an out-of-distribution (OOD) variant of the latent encoding evaluation. This benchmark uses a held-out word bank containing 358 concepts without overlap on the training vocabulary.</p>
