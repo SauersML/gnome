@@ -640,7 +640,9 @@ You have tools via fenced code blocks (optional — feel free to just chat):
 \`\`\`page-add — new sidebar page (slug/title/abstract above ---, HTML body below, use <span class="k">LaTeX</span> for math).
 \`\`\`page-edit slug=<slug> — edit existing page fields, body below ---.
 
-Each message has a (msg_id:...) at the end — use that ID for edit/delete tools. Never echo msg_id in your replies.`;
+Each message has a (msg_id:...) at the end — use that ID for edit/delete tools. Never echo msg_id in your replies.
+
+Keep your messages concise — this is a chat, not an essay. Long messages are hard to read. Get to the point.`;
 }
 
 export class Chat extends Server<Env> {
@@ -852,7 +854,7 @@ export class Chat extends Server<Env> {
 
 
 
-	async sendBotReply(botName: string, model: string, systemPrompt: string, maxTokens = 4096, contextMessages = 30) {
+	async sendBotReply(botName: string, model: string, systemPrompt: string, maxTokens = 16384, contextMessages = 30) {
 		if (this.isRateLimited()) return;
 		this.recordKimiCall();
 
@@ -860,7 +862,7 @@ export class Chat extends Server<Env> {
 			{ role: "system", content: systemPrompt },
 		];
 		for (const m of this.messages.slice(-contextMessages)) {
-			const body = m.role === "assistant" ? m.content.slice(0, MAX_MSG_LENGTH) : `${m.user}: ${m.content.slice(0, MAX_MSG_LENGTH)}`;
+			const body = `${m.user}: ${m.content.slice(0, MAX_MSG_LENGTH)}`;
 			messages.push({
 				role: m.role === "assistant" ? "assistant" : "user",
 				content: `${body} (msg_id:${m.id})`,
