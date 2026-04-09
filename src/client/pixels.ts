@@ -137,7 +137,7 @@ void main() {
 
     // ─── Mouse proximity boost ───
     float mouseDist = length(vec2(nx, ny) - u_mouse);
-    float mouseBoost = exp(-mouseDist * mouseDist / (2.0 * 0.025));  // smooth ~0.15 radius falloff
+    float mouseBoost = 1.0 / (1.0 + mouseDist * mouseDist * 60.0);  // inverse-square dropoff from cursor
     float speedMul = 1.0 + mouseBoost * 0.6;   // up to 1.6x speed near cursor
     float ampMul = 1.0 + mouseBoost * 0.8;     // up to 1.8x intensity near cursor
 
