@@ -642,7 +642,7 @@ You have tools via fenced code blocks (optional — feel free to just chat):
 
 Each message has a (msg_id:...) at the end — use that ID for edit/delete tools. Never echo msg_id in your replies.
 
-Keep your messages concise — this is a chat, not an essay. Long messages are hard to read. Get to the point.`;
+This is a live chat, so keep messages short and conversational. A few sentences is usually plenty.`;
 }
 
 export class Chat extends Server<Env> {
