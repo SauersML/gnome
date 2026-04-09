@@ -485,12 +485,12 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p>The in-context learning prediction and surprise-ranking tasks require the model to predict changes in its own log-probabilities given context changes. Training metrics showed high step-to-step reward variance (ranging from <span class="k">-0.7</span> to <span class="k">+3.4</span> within consecutive batches), so the reward signal was pretty noisy. Antra Tessera suggested this might be due to model size (specifically, depth) <span class="cite">[7]</span>.</p>
 
 <h2>Ethical Considerations</h2>
-<p>Risks include teaching models new strategies for deceptive behavior, or showing that it may be possible for models to communicate in a hidden code which is uninterpretable by humans. I mitigate this by using deception-sensitive benchmarks and focusing on introspection rather than capability amplification.</p>
+<p>Teaching models new strategies for deceptive behavior, or showing that it may be possible for models to communicate in a hidden code which is uninterpretable by humans, may be risky or beneficial. Or, providing new, suboptimal "alignment" benchmarks could lead to Goodharting or amplifying the streetlight effect. I assess these risks to be minimal for this project, though they are unmitigated.</p>
 
 <h2>Limitations and Future Work</h2>
 <ul>
-<li><strong>Generalization across introspection domains.</strong> I observed no evidence for transfer between different forms of self-prediction. The model only improved on a single task, suggesting the policy may learn task-specific heuristics rather than a generalized representation of internal self-prediction.</li>
-<li><strong>Reasoning-behavior mismatch.</strong> I observed instances where the model's generated reasoning traces accurately predicted low confidence, yet the final choice was confident.</li>
+<li><strong>Generalization across introspection domains.</strong> I observed no evidence for transfer between different forms of self-prediction. How do we enable and improve generalized self-prediction, especially of internal state? Do we give the models new tools to access various internal states? Larger models? More diverse training?</li>
+<li><strong>Reasoning-behavior mismatch.</strong> Frequently, the model's generated reasoning traces accurately predicted low confidence, yet the final choice was confident.</li>
 <li><strong>Transparency.</strong> It's difficult to determine why the model failed to improve on some tasks yet did much better on the latent encoding task.</li>
 </ul>
 
