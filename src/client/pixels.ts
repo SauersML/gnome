@@ -159,10 +159,11 @@ void main() {
     float sw4 = sin(dot(vec2(nx, ny), w4d) * 3.5 + s * 0.40 * speedMul) * ampMul;
 
     // Absorption center: 4 wave components + per-pixel phase for rich shifting
-    float absShift = 35.0*sin(s*0.18 + p1 + nx*4.0 + ny*3.0) * (0.5 + 0.5*sw1)
-                   + 25.0*sin(s*0.25 + p2 + nx*2.5 - ny*3.5) * (0.5 + 0.5*sw2)
-                   + 18.0*sin(s*0.35 + p3 - nx*3.0 + ny*2.0) * (0.5 + 0.5*sw3)
-                   + 12.0*cos(s*0.42 + p1*0.7 + nx*5.0 + ny*1.5) * (0.5 + 0.5*sw4);
+    float hueMul = 1.0 + mouseBoost * 1.2;  // wider hue range near cursor
+    float absShift = 35.0*hueMul*sin(s*0.18 + p1 + nx*4.0 + ny*3.0) * (0.5 + 0.5*sw1)
+                   + 25.0*hueMul*sin(s*0.25 + p2 + nx*2.5 - ny*3.5) * (0.5 + 0.5*sw2)
+                   + 18.0*hueMul*sin(s*0.35 + p3 - nx*3.0 + ny*2.0) * (0.5 + 0.5*sw3)
+                   + 12.0*hueMul*cos(s*0.42 + p1*0.7 + nx*5.0 + ny*1.5) * (0.5 + 0.5*sw4);
     float absC = absCenter + absShift;
     float thickMod = thickness * (0.75 + 0.25*sin(s*0.12 + p2 + sw1*0.5 + sw3*0.3));
 
