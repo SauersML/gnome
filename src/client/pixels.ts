@@ -466,8 +466,7 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		animId = requestAnimationFrame(draw);
 	}
 
-	let scrollTimer = 0;
-	const markStale = () => { clearTimeout(scrollTimer); scrollTimer = window.setTimeout(() => { haloStale = true; }, 100); };
+	const markStale = () => { haloStale = true; };
 	resize();
 	animId = requestAnimationFrame(draw);
 	window.addEventListener("resize", resize);

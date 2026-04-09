@@ -22,7 +22,7 @@ html, body {
 	height: 100%;
 	color: var(--mist);
 	font-family: "Hanken Grotesk", sans-serif;
-	font-size: clamp(14px, 1.6vw, 15.5px);
+	font-size: clamp(16px, 1.8vw, 18px);
 	line-height: 1.6;
 	-webkit-font-smoothing: antialiased;
 	background: #0a140c;
