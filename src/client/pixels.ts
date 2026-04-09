@@ -13,6 +13,7 @@ uniform vec2 u_res;
 uniform float u_px;
 uniform sampler2D u_halo;
 uniform vec2 u_gridSize;
+uniform vec2 u_mouse;
 
 float hash(vec2 p, float seed) {
     vec3 p3 = fract(vec3(p.xyx + seed) * vec3(0.1031, 0.1030, 0.0973));
@@ -134,22 +135,28 @@ void main() {
     float bv = hash(cell, 400.0) * 4.0 - 2.0;
     baseColor += bv;
 
+    // ─── Mouse proximity boost ───
+    float mouseDist = length(vec2(nx, ny) - u_mouse);
+    float mouseBoost = exp(-mouseDist * mouseDist / (2.0 * 0.06));  // smooth ~0.25 radius falloff
+    float speedMul = 1.0 + mouseBoost * 1.5;   // up to 2.5x speed near cursor
+    float ampMul = 1.0 + mouseBoost * 0.8;     // up to 1.8x intensity near cursor
+
     // ─── Sweeping hue waves ───
     // 4 rotating wave fronts at irrational-ratio speeds so they never repeat
-    float w1a = s * 0.17;
-    float w2a = s * 0.13 + 2.1;
-    float w3a = s * 0.09 + 4.3;
-    float w4a = s * 0.23 + 1.0;
+    float w1a = s * 0.17 * speedMul;
+    float w2a = s * 0.13 * speedMul + 2.1;
+    float w3a = s * 0.09 * speedMul + 4.3;
+    float w4a = s * 0.23 * speedMul + 1.0;
     vec2 w1d = vec2(cos(w1a), sin(w1a));
     vec2 w2d = vec2(cos(w2a), sin(w2a));
     vec2 w3d = vec2(cos(w3a), sin(w3a));
     vec2 w4d = vec2(cos(w4a), sin(w4a));
 
     // Each wave has different spatial frequency for complex interference
-    float sw1 = sin(dot(vec2(nx, ny), w1d) * 7.0 + s * 0.35);
-    float sw2 = sin(dot(vec2(nx, ny), w2d) * 5.0 + s * 0.28);
-    float sw3 = sin(dot(vec2(nx, ny), w3d) * 11.0 + s * 0.22);
-    float sw4 = sin(dot(vec2(nx, ny), w4d) * 3.5 + s * 0.40);
+    float sw1 = sin(dot(vec2(nx, ny), w1d) * 7.0 + s * 0.35 * speedMul) * ampMul;
+    float sw2 = sin(dot(vec2(nx, ny), w2d) * 5.0 + s * 0.28 * speedMul) * ampMul;
+    float sw3 = sin(dot(vec2(nx, ny), w3d) * 11.0 + s * 0.22 * speedMul) * ampMul;
+    float sw4 = sin(dot(vec2(nx, ny), w4d) * 3.5 + s * 0.40 * speedMul) * ampMul;
 
     // Absorption center: 4 wave components + per-pixel phase for rich shifting
     float absShift = 35.0*sin(s*0.18 + p1 + nx*4.0 + ny*3.0) * (0.5 + 0.5*sw1)
@@ -342,6 +349,7 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	const uRes = gl.getUniformLocation(prog, "u_res")!;
 	const uPx = gl.getUniformLocation(prog, "u_px")!;
 	const uGridSize = gl.getUniformLocation(prog, "u_gridSize")!;
+	const uMouse = gl.getUniformLocation(prog, "u_mouse")!;
 	const uHalo = gl.getUniformLocation(prog, "u_halo")!;
 
 	const haloTex = gl.createTexture()!;
@@ -360,6 +368,8 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 	const HALO = 5;
 	let cachedRects: Rect[] = [];
 	let haloStale = true;
+	let mouseX = 0.5;
+	let mouseY = 0.5;
 
 	// Only recompute halo when DOM actually changes, debounced
 	let mutationTimer = 0;
@@ -462,20 +472,27 @@ export function initPixelCanvas(canvas: HTMLCanvasElement) {
 		gl.uniform2f(uRes, cols, rows);
 		gl.uniform1f(uPx, 1.0);
 		gl.uniform2f(uGridSize, cols, rows);
+		gl.uniform2f(uMouse, mouseX, mouseY);
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 		animId = requestAnimationFrame(draw);
 	}
 
 	const markStale = () => { haloStale = true; };
+	const onMouseMove = (e: MouseEvent) => {
+		mouseX = e.clientX / window.innerWidth;
+		mouseY = e.clientY / window.innerHeight;
+	};
 	resize();
 	animId = requestAnimationFrame(draw);
 	window.addEventListener("resize", resize);
 	window.addEventListener("scroll", markStale, true); // capture phase for inner scrolls
+	window.addEventListener("mousemove", onMouseMove);
 
 	return () => {
 		cancelAnimationFrame(animId);
 		window.removeEventListener("resize", resize);
 		window.removeEventListener("scroll", markStale, true);
+		window.removeEventListener("mousemove", onMouseMove);
 		observer.disconnect();
 	};
 }
