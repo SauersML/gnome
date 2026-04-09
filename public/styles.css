@@ -827,6 +827,7 @@ html, body {
 	overflow-y: auto;
 	max-width: 580px;
 	scrollbar-width: none;
+	margin-top: clamp(24px, 6vh, 60px);
 }
 
 .pages-list::-webkit-scrollbar { display: none; }
