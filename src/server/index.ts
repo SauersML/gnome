@@ -479,10 +479,10 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 
 <p>The trained model shows statistically significant improvement on OOD words (<span class="k">\\Delta = +0.078</span>, 95% CI <span class="k">[0.017, 0.132]</span>, <span class="k">p = 0.006</span>), though the effect size is substantially smaller than the in-distribution improvement (<span class="k">\\Delta = +0.367</span>, <span class="k">p &lt; 0.0001</span>). The model has learned encoding strategies that transfer beyond the training vocabulary, though there are also some adaptations specific to the training word bank (since the OOD effect size is smaller). OOD performance would show no significant difference at all if the mechanism was simply memorization. Instead, there appears to be an RL-improved strategy for a transferable encoding mechanism.</p>
 
-<h3>Failure Case Analysis</h3>
-<p><strong>Calibration tasks: no improvement despite proper scoring rules.</strong> Both the confidence-and-accuracy task and the Brier score calibration task showed no significant improvement after training (<span class="k">p &gt; 0.5</span>), despite using proper scoring rules that theoretically incentivize calibrated self-assessment. I believe this is due to sparse gradient signal: the calibration reward <span class="k">R_{\\text{cal}} = 1 - (c - y)^2</span> provides maximal gradient magnitude at <span class="k">c = 0.5</span> and diminishes toward <span class="k">c \\in \\{0, 1\\}</span>. Since the base model already produces relatively extreme confidence values, the training signal may be too weak to induce behavioral change.</p>
+<h3>Failure Cases</h3>
+<p><strong>Calibration tasks: no improvement despite proper scoring rules in RL.</strong> Both the confidence-and-accuracy task and the Brier score calibration task showed no significant improvement after training (<span class="k">p &gt; 0.5</span>). I believe this is due to sparse gradient signal: the calibration reward <span class="k">R_{\\text{cal}} = 1 - (c - y)^2</span> provides maximal gradient magnitude at <span class="k">c = 0.5</span> and diminishes toward <span class="k">c \\in \\{0, 1\\}</span>. Since the base model already produces relatively extreme confidence values, the training signal may be too weak.</p>
 
-<p>The in-context learning prediction and surprise-ranking tasks require the model to predict changes in its own log-probabilities under contextual interventions. Training metrics showed high step-to-step reward variance (ranging from <span class="k">-0.7</span> to <span class="k">+3.4</span> within consecutive batches), indicating the reward signal was noisy.</p>
+<p>The in-context learning prediction and surprise-ranking tasks require the model to predict changes in its own log-probabilities given context changes. Training metrics showed high step-to-step reward variance (ranging from <span class="k">-0.7</span> to <span class="k">+3.4</span> within consecutive batches), so the reward signal was pretty noisy. Antra Tessera suggested this might be due to model size (specifically, depth) <span class="cite">[7]</span>.</p>
 
 <h2>Ethical Considerations</h2>
 <p>Risks include teaching models new strategies for deceptive behavior, or showing that it may be possible for models to communicate in a hidden code which is uninterpretable by humans. I mitigate this by using deception-sensitive benchmarks and focusing on introspection rather than capability amplification.</p>
@@ -510,6 +510,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <li><span class="ref-id">[4]</span> Schoen, R., et al. <em>Stress-Testing Alignment: Scheming and Deceptive Behaviors in Language Models.</em> 2025.</li>
 <li><span class="ref-id">[5]</span> Li, K., et al. <em>Training Language Models to Explain Their Internal Signals.</em> 2025.</li>
 <li><span class="ref-id">[6]</span> Lindsey, J., Guo, D., Kaplan, J., et al. <em>Emergent Introspective Awareness in Large Language Models.</em> Anthropic, 2025.</li>
+<li><span class="ref-id">[7]</span> Tessera, A. <a href="https://x.com/tessera_antra/status/2041708553397019052" target="_blank" rel="noopener">Personal communication.</a> 2025.</li>
 </ol>
 </div>`;
 
