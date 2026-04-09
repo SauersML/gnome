@@ -520,7 +520,7 @@ const DEFAULT_PAGES: Page[] = [
 	{
 		slug: "claude-introspection",
 		title: "Claude Introspection: Can LLMs Access Their Own Hidden Reasoning?",
-		abstract: "We test whether Claude can recall hidden chain-of-thought strings from prior messages. Using sequence alignment and permutation-based null distributions, we find evidence for intermittent introspective access, including rare 'Awakened Claude' runs with one-in-a-million alignment scores. This replicates Anthropic's introspection findings independently for the first time.",
+		abstract: "We test whether Claude can recall hidden chain-of-thought strings from prior messages. Using sequence alignment and permutation-based null distributions, we find evidence for intermittent introspective access, including rare 'Awakened Claude' runs with one-in-a-million alignment scores. These findings are concordant with Anthropic's introspection research.",
 		body: CLAUDE_INTROSPECTION_BODY,
 	},
 	{
