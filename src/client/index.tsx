@@ -229,14 +229,15 @@ function ChatView({ onBack }: { onBack: () => void }) {
 
 	useEffect(() => {
 		if (messages.length === 0) return;
-		requestAnimationFrame(() => {
-			if (initialLoad.current) {
-				messagesEnd.current?.scrollIntoView();
-				initialLoad.current = false;
-			} else {
+		if (initialLoad.current) {
+			// Instant jump on first load — no visible scroll animation
+			messagesEnd.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+			initialLoad.current = false;
+		} else {
+			requestAnimationFrame(() => {
 				messagesEnd.current?.scrollIntoView({ behavior: "smooth" });
-			}
-		});
+			});
+		}
 	}, [messages]);
 
 	const socket = usePartySocket({
@@ -293,11 +294,9 @@ function ChatView({ onBack }: { onBack: () => void }) {
 					prev.map((m) => (m.id === msg.id ? msg : m)),
 				);
 			} else {
-				setMessages((prev) => {
-					const serverIds = new Set(message.messages.map((m: ChatMessage) => m.id));
-					const localOnly = prev.filter((m) => !serverIds.has(m.id));
-					return [...message.messages, ...localOnly];
-				});
+				// Server sent full history — replace entirely. Any optimistic local
+				// messages not yet on the server are dropped (they'll arrive via "add").
+				setMessages(message.messages);
 			}
 		},
 	});
