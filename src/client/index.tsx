@@ -104,12 +104,16 @@ function ArticlePage({ page, onBack }: { page: Page; onBack: () => void }) {
 
 function PagesView({ pages, onBack, initialSlug }: { pages: Page[]; onBack: () => void; initialSlug?: string }) {
 	const [activePage, setActivePage] = useState<Page | null>(null);
+	const slugConsumed = useRef(false);
 
 	// Resolve initialSlug once pages load
 	useEffect(() => {
-		if (initialSlug && !activePage && pages.length > 0) {
+		if (initialSlug && !slugConsumed.current && !activePage && pages.length > 0) {
 			const found = pages.find((p) => p.slug === initialSlug);
-			if (found) setActivePage(found);
+			if (found) {
+				slugConsumed.current = true;
+				setActivePage(found);
+			}
 		}
 	}, [initialSlug, pages, activePage]);
 
