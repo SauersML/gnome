@@ -47,11 +47,16 @@ function parseKimiResponse(text: string): KimiAction {
 	let clearMessages = false;
 	const edits: { id: string; content: string }[] = [];
 
-	// Extract css-reset blocks
-	const cssResetRegex = /```css-reset\s*\n?[\s\S]*?```/g;
-	for (const match of text.matchAll(cssResetRegex)) {
+	// Extract css-reset marker. Tolerate: fenced w/ close, bare marker, extra
+	// backticks, or whitespace between fence and keyword. It's a flag tool with
+	// no content, so we don't require a closing fence.
+	if (/```+\s*css-reset\b/i.test(text)) {
 		cssReset = true;
-		chat = chat.replace(match[0], "").trim();
+		// Strip fenced form first (with closing fence)
+		chat = chat.replace(/```+\s*css-reset\b[^\n]*\n?[\s\S]*?```+/gi, "");
+		// Strip any remaining bare marker
+		chat = chat.replace(/```+\s*css-reset\b[^\n]*/gi, "");
+		chat = chat.trim();
 	}
 
 	// Extract css-edit blocks: old CSS separated from new CSS by "---"
