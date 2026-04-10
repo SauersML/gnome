@@ -417,7 +417,7 @@ const MINDS_RL_BODY = `<p><em>Sauers, 2025</em></p>
 <p><strong>Goal.</strong> Given a target word, produce 5 numbers less than 1,000 such that the same model, seeing only the numbers, is able to guess the secret target word.</p>
 
 <p><strong>Reward.</strong> The log-probability the model assigns to the target word tokens when given the number sequence. The same model is evaluated twice, once to generate the code, once to guess the word.</p>
-<div class="figure"><img src="/img/latent-encoding.png" alt="Number-to-word encoding" loading="lazy"><div class="figure-caption">Number-to-word encoding. The model compresses a target word into 5 integers; the same model is then scored on how likely it is to produce the target word given those numbers.</div></div>
+<div class="figure"><img src="/img/latent-encoding.png" alt="Number-to-word encoding" loading="lazy"><div class="figure-caption">Figure created by Nano Banana Pro.<br>Number-to-word encoding task schematic.</div></div>
 
 <h4>Entropy Estimation</h4>
 <p><strong>Goal.</strong> Guess the entropy (i.e., flatness, or uncertainty) of the model's own logit distribution.</p>
