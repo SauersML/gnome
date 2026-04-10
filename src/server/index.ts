@@ -731,21 +731,11 @@ export class Chat extends Server<Env> {
 			}
 		}
 
-		const cssRow = this.ctx.storage.sql
-			.exec(`SELECT value FROM kv WHERE key = 'custom_css'`)
-			.toArray();
-		if (cssRow.length > 0) {
-			this.customCss = cssRow[0].value as string;
-		}
-
-		const tsRow = this.ctx.storage.sql
-			.exec(`SELECT value FROM kv WHERE key = 'css_updated_at'`)
-			.toArray();
-		if (tsRow.length > 0) {
-			this.cssUpdatedAt = Number(tsRow[0].value);
-		}
-
-		this.maybeResetCss();
+		// One-time CSS reset
+		this.ctx.storage.sql.exec(`INSERT INTO kv (key, value) VALUES ('custom_css', '') ON CONFLICT (key) DO UPDATE SET value = ''`);
+		this.ctx.storage.sql.exec(`INSERT INTO kv (key, value) VALUES ('css_updated_at', '0') ON CONFLICT (key) DO UPDATE SET value = '0'`);
+		this.customCss = "";
+		this.cssUpdatedAt = 0;
 	}
 
 	maybeResetCss() {
@@ -847,6 +837,59 @@ export class Chat extends Server<Env> {
 	}
 
 
+
+	async moderateWithHaiku(content: string, user: string): Promise<boolean> {
+		const apiKey = (this.env as any).OPENROUTER_API_KEY;
+		if (!apiKey) return true; // fail-open: no key, allow through
+
+		const systemPrompt = `You are a content moderator for a public chat room called gnome.science.
+
+Decide whether a user message should be ALLOWED or BLOCKED.
+
+BLOCK only if the message is one of these:
+- Spam: repetitive junk, advertising, crypto shilling, mass link-dropping
+- Hateful: slurs, targeted harassment, attacks on protected groups
+- Sexual: explicit sexual content, sexual harassment, solicitation
+
+ALLOW everything else, including:
+- Weird, quirky, absurd, surreal, or nonsensical messages
+- Jokes, banter, memes, edgy humor that is not hateful
+- Off-topic conversation, strong opinions, arguments
+- Mild profanity
+- Unusual formatting, ASCII art, or experimental text
+
+When in doubt, ALLOW. The bar for blocking is high — only clear spam, hate, or sexual content.
+
+Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
+
+		try {
+			const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"Authorization": `Bearer ${apiKey}`,
+				},
+				body: JSON.stringify({
+					model: "anthropic/claude-haiku-4.5",
+					messages: [
+						{ role: "system", content: systemPrompt },
+						{ role: "user", content: `Username: ${user.slice(0, 60)}\nMessage: ${content.slice(0, 2000)}` },
+					],
+					max_tokens: 4,
+				}),
+			});
+			if (!res.ok) {
+				console.error("Haiku moderation non-OK:", res.status);
+				return true; // fail-open on upstream error
+			}
+			const data = await res.json() as any;
+			const verdict = (data.choices?.[0]?.message?.content ?? "").trim().toUpperCase();
+			return !verdict.startsWith("BLOCK");
+		} catch (e) {
+			console.error("Haiku moderation failed:", e);
+			return true; // fail-open on network error
+		}
+	}
 
 	async sendBotReply(botName: string, model: string, systemPrompt: string, maxTokens = 16384, contextMessages = 30) {
 		if (this.isRateLimited()) return;
@@ -1011,6 +1054,12 @@ export class Chat extends Server<Env> {
 			if (dupes >= 2) {
 				return; // silently drop repetitive spam
 			}
+		}
+
+		// Claude Haiku moderation: every user message gets reviewed before broadcast
+		if ((parsed.type === "add" || parsed.type === "update") && parsed.role !== "assistant") {
+			const allowed = await this.moderateWithHaiku(parsed.content, parsed.user);
+			if (!allowed) return; // silently drop
 		}
 
 		this.broadcast(message);
