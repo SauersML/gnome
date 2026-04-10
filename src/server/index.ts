@@ -979,14 +979,24 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 			}
 
 			// Apply tool effects
-			if (cssReset) { this.saveCss(""); this.broadcastMessage({ type: "css", css: "" }); }
-			for (const edit of cssEdits) {
-				if (this.customCss.includes(edit.old)) {
-					this.saveCss(sanitizeCss(this.customCss.replace(edit.old, edit.new)));
+			// css-reset dominates: if the bot asked for a reset, ignore any
+			// css-add/css-edit in the same response so the wipe isn't clobbered
+			// by a follow-up broadcast.
+			if (cssReset) {
+				this.saveCss("");
+				this.broadcastMessage({ type: "css", css: "" });
+			} else {
+				for (const edit of cssEdits) {
+					if (this.customCss.includes(edit.old)) {
+						this.saveCss(sanitizeCss(this.customCss.replace(edit.old, edit.new)));
+						this.broadcastMessage({ type: "css", css: this.customCss });
+					}
+				}
+				if (cssAdd) {
+					this.saveCss(sanitizeCss(this.customCss + "\n" + cssAdd));
 					this.broadcastMessage({ type: "css", css: this.customCss });
 				}
 			}
-			if (cssAdd) { this.saveCss(sanitizeCss(this.customCss + "\n" + cssAdd)); this.broadcastMessage({ type: "css", css: this.customCss }); }
 			for (const pa of pageAdds) { this.savePage(pa); this.broadcastMessage({ type: "page-update", page: pa }); }
 			for (const pe of pageEdits) {
 				const existing = this.pages.find((p) => p.slug === pe.slug);
