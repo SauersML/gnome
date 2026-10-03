@@ -73,10 +73,6 @@ function HomeScreen({ onNavigate }: { onNavigate: (view: "chat" | "pages") => vo
 						<span className="home-btn-title">Pages</span>
 						<span className="home-btn-desc">LLM research</span>
 					</button>
-					<a className="home-btn home-btn-wide" href="/transformer/">
-						<span className="home-btn-title">Inside the Transformer</span>
-						<span className="home-btn-desc">An interactive 3D map of a modern LLM</span>
-					</a>
 					<a
 						className="home-btn home-btn-icon"
 						href="https://medium.com/@SauersML"
