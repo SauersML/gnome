@@ -96,6 +96,7 @@ function HomeScreen({ onNavigate }: { onNavigate: (view: "chat" | "pages") => vo
 						</svg>
 					</a>
 				</div>
+				<a className="felony-bench-link" href="https://bench.red">Felony Bench</a>
 			</div>
 		</>
 	);
@@ -124,28 +125,18 @@ function ArticlePage({ page, onBack }: { page: Page; onBack: () => void }) {
 
 // ---- Pages browser ----
 
-function PagesView({ pages, onBack, initialSlug }: { pages: Page[]; onBack: () => void; initialSlug?: string }) {
-	const [activePage, setActivePage] = useState<Page | null>(null);
-	const slugConsumed = useRef(false);
-
-	// Resolve initialSlug once pages load
-	useEffect(() => {
-		if (initialSlug && !slugConsumed.current && !activePage && pages.length > 0) {
-			const found = pages.find((p) => p.slug === initialSlug);
-			if (found) {
-				slugConsumed.current = true;
-				setActivePage(found);
-			}
-		}
-	}, [initialSlug, pages, activePage]);
+function PagesView({ pages, onBack, initialSlug, loading }: { pages: Page[]; onBack: () => void; initialSlug?: string; loading: boolean }) {
+	const [activeSlug, setActiveSlug] = useState<string | null>(initialSlug ?? null);
+	const activePage = pages.find((p) => p.slug === activeSlug);
+	useEffect(() => { setActiveSlug(initialSlug ?? null); }, [initialSlug]);
 
 	function openPage(p: Page) {
-		setActivePage(p);
+		setActiveSlug(p.slug);
 		window.history.pushState(null, "", `/pages/${p.slug}`);
 	}
 
 	function closePage() {
-		setActivePage(null);
+		setActiveSlug(null);
 		window.history.pushState(null, "", "/pages");
 	}
 
@@ -153,16 +144,11 @@ function PagesView({ pages, onBack, initialSlug }: { pages: Page[]; onBack: () =
 	useEffect(() => {
 		const onPop = () => {
 			const match = window.location.pathname.match(/^\/pages\/([a-z0-9][a-z0-9-]*)$/);
-			if (match) {
-				const found = pages.find((p) => p.slug === match[1]);
-				setActivePage(found || null);
-			} else {
-				setActivePage(null);
-			}
+			setActiveSlug(match?.[1] ?? null);
 		};
 		window.addEventListener("popstate", onPop);
 		return () => window.removeEventListener("popstate", onPop);
-	}, [pages]);
+	}, []);
 
 	if (activePage) {
 		return (
@@ -191,7 +177,7 @@ function PagesView({ pages, onBack, initialSlug }: { pages: Page[]; onBack: () =
 							<span className="sidebar-item-desc">{p.abstract}</span>
 						</button>
 					))}
-					{pages.length === 0 && <div className="empty-text">No pages yet.</div>}
+					{pages.length === 0 && <div className="empty-text">{loading ? "Loading pages…" : "No pages yet."}</div>}
 				</div>
 			</div>
 		</>
@@ -383,11 +369,11 @@ function ChatView({ onBack }: { onBack: () => void }) {
 
 						{typingUsers.size > 0 && (() => {
 							const users = [...typingUsers];
-							const hasKimi = typingUsers.has("Kimi K2.5");
-							const humans = users.filter((u) => u !== "Kimi K2.5");
+							const bots = users.filter((u) => ["Claude", "Kimi K2.5", "Cogito v2.1"].includes(u));
+							const humans = users.filter((u) => !bots.includes(u));
 							const parts: string[] = [];
 							if (humans.length > 0) parts.push(`${humans.join(", ")} ${humans.length === 1 ? "is typing" : "are typing"}`);
-							if (hasKimi) parts.push("Kimi K2.5 is responding");
+							for (const bot of bots) parts.push(`${bot} is responding`);
 							return <div className="typing-indicator">{parts.join(" · ")}...</div>;
 						})()}
 						<div className="compose">
@@ -417,6 +403,7 @@ function ChatView({ onBack }: { onBack: () => void }) {
 									className="compose-input"
 									placeholder={pendingMessage && !name ? "Enter your name..." : "Write something..."}
 									autoComplete="off"
+									maxLength={pendingMessage && !name ? 80 : 10_000}
 									onInput={sendTyping}
 								/>
 								<button type="submit" className="compose-send">{pendingMessage && !name ? "Join" : "Send"}</button>
@@ -450,14 +437,16 @@ function navigate(path: string) {
 function App() {
 	const initial = getInitialView();
 	const [view, setView] = useState<"home" | "chat" | "pages">(initial.view);
-	const [initialSlug] = useState(initial.slug);
+	const [initialSlug, setInitialSlug] = useState(initial.slug);
 	const [pages, setPages] = useState<Page[]>([]);
+	const [pagesLoaded, setPagesLoaded] = useState(false);
 
 	// Handle browser back/forward
 	useEffect(() => {
 		const onPop = () => {
-			const { view } = getInitialView();
+			const { view, slug } = getInitialView();
 			setView(view);
+			setInitialSlug(slug);
 		};
 		window.addEventListener("popstate", onPop);
 		return () => window.removeEventListener("popstate", onPop);
@@ -470,6 +459,7 @@ function App() {
 			const message = JSON.parse(evt.data as string) as Message;
 			if (message.type === "pages") {
 				setPages(message.pages);
+				setPagesLoaded(true);
 			} else if (message.type === "page-update") {
 				const p = message.page;
 				setPages((prev) => {
@@ -483,6 +473,7 @@ function App() {
 
 	function nav(newView: "home" | "chat" | "pages") {
 		setView(newView);
+		setInitialSlug(undefined);
 		if (newView === "home") navigate("/");
 		else if (newView === "chat") navigate("/chat");
 		else navigate("/pages");
@@ -493,7 +484,7 @@ function App() {
 	}
 
 	if (view === "pages") {
-		return <PagesView pages={pages} onBack={() => nav("home")} initialSlug={initialSlug} />;
+		return <PagesView pages={pages} onBack={() => nav("home")} initialSlug={initialSlug} loading={!pagesLoaded} />;
 	}
 
 	return <HomeScreen onNavigate={nav} />;

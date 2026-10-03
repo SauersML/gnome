@@ -6,10 +6,9 @@ import {
 } from "partyserver";
 
 import type { ChatMessage, Message, Page } from "../shared";
-
-const KIMI_PATTERN = /\bkimi\b|\bk2\.?5\b/i;
-const COGITO_PATTERN = /\bcogito\b/i;
-const CLAUDE_PATTERN = /\bclaude\b/i;
+import { CLAUDE_MODEL, KIMI_MODEL, COGITO_MODEL, modelIdentity, selectBot } from "./bot-routing";
+import { requestCogito } from "./cogito";
+export { CogitoRelay } from "./cogito";
 
 const CSS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -763,7 +762,8 @@ export class Chat extends Server<Env> {
 		connection.send(
 			JSON.stringify({
 				type: "all",
-				messages: this.messages.slice(-200),
+				messages: this.messages.slice(-200).map((m) => m.role === "assistant" && m.id.startsWith("bot-") && m.id.endsWith("-err")
+					? { ...m, content: `${m.user} couldn't respond right now. Please try again later.` } : m),
 			} satisfies Message),
 		);
 
@@ -875,7 +875,7 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 					"Authorization": `Bearer ${apiKey}`,
 				},
 				body: JSON.stringify({
-					model: "anthropic/claude-haiku-4.5",
+					model: CLAUDE_MODEL,
 					messages: [
 						{ role: "system", content: systemPrompt },
 						{ role: "user", content: `Username: ${user.slice(0, 60)}\nMessage: ${content.slice(0, 2000)}` },
@@ -901,12 +901,13 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 		this.recordKimiCall();
 
 		const messages: { role: string; content: string }[] = [
-			{ role: "system", content: systemPrompt },
+			{ role: "system", content: `${systemPrompt}\n\n${modelIdentity(botName, model)}` },
 		];
 		for (const m of this.messages.slice(-contextMessages)) {
+			if (m.role === "assistant" && m.id.startsWith("bot-") && m.id.endsWith("-err")) continue;
 			const body = `${m.user}: ${m.content.slice(0, MAX_MSG_LENGTH)}`;
 			messages.push({
-				role: m.role === "assistant" ? "assistant" : "user",
+				role: m.role === "assistant" && m.user === botName ? "assistant" : "user",
 				content: `${body} (msg_id:${m.id})`,
 			});
 		}
@@ -914,45 +915,61 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 		const msgId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
 		const apiKey = (this.env as any).OPENROUTER_API_KEY;
-		if (!apiKey) { console.error("No OPENROUTER_API_KEY"); return; }
+		const isCogito = model === COGITO_MODEL;
+		if (!isCogito && !apiKey) { console.error("No OPENROUTER_API_KEY"); return; }
 
 		this.broadcastMessage({ type: "typing", user: botName, isTyping: true });
+		const typingHeartbeat = setInterval(() => {
+			this.broadcastMessage({ type: "typing", user: botName, isTyping: true });
+		}, 4000);
 		try {
-			console.log("Calling", model, "via OpenRouter with", messages.length, "messages");
-			const reqBody = JSON.stringify({ model, messages, max_tokens: maxTokens });
-			const reqHeaders = {
-				"Content-Type": "application/json",
-				"Authorization": `Bearer ${apiKey}`,
-			};
-			let res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-				method: "POST", headers: reqHeaders, body: reqBody,
+			const provider = isCogito ? "Deep Cogito" : "OpenRouter";
+			console.log("Calling", model, "via", provider, "with", messages.length, "messages");
+			const reqBody = JSON.stringify(isCogito ? {
+				model, messages, temperature: 0.6,
+				stop: ["<|end_of_output|>", "<|end_of_text|>", "<|eot_id|>", "<|endoftext|>"],
+				chat_template_kwargs: { enable_thinking: false },
+			} : { model, messages, max_tokens: maxTokens });
+			const requestCompletion = () => isCogito ? requestCogito(this.env.COGITO_RELAY, reqBody) : fetch("https://openrouter.ai/api/v1/chat/completions", {
+				method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+				body: reqBody, signal: AbortSignal.timeout(120_000),
 			});
-			console.log("OpenRouter responded:", res.status);
+			let res = await requestCompletion();
+			console.log(provider, "responded:", res.status);
 
 			// Retry up to 2 times on 5xx (transient provider errors)
 			for (let retry = 0; retry < 2 && res.status >= 500; retry++) {
 				console.log(`${model} returned ${res.status}, retry ${retry + 1}/2 after ${(retry + 1) * 2}s`);
 				await new Promise(r => setTimeout(r, (retry + 1) * 2000));
-				res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-					method: "POST", headers: reqHeaders, body: reqBody,
-				});
+				await res.body?.cancel();
+				res = await requestCompletion();
 				console.log(`Retry ${retry + 1} responded:`, res.status);
 			}
 
 			if (!res.ok) {
-				const errText = await res.text();
-				throw new Error(`OpenRouter ${res.status}: ${errText.slice(0, 200)}`);
+				await res.body?.cancel();
+				throw new Error(`${provider} HTTP ${res.status}`);
 			}
 
-			const data = await res.json() as any;
-			const fullText = (data.choices?.[0]?.message?.content ?? "")
+			let responseText: string;
+			if (isCogito) {
+				if (!res.headers.get("content-type")?.startsWith("text/plain")) throw new Error("Unexpected Deep Cogito response type");
+				responseText = await res.text();
+			} else {
+				const data = await res.json() as any;
+				if (data.error) throw new Error(`OpenRouter completion error: ${data.error.code ?? "unknown"}`);
+				responseText = data.choices?.[0]?.message?.content ?? "";
+			}
+			const fullText = responseText
+				.replace(/<think>[\s\S]*?<\/think>/gi, "")
+				.replace(/<think>[\s\S]*$/gi, "")
 				.replace(/\(msg_id:[^)]*\)/g, "")
 				.replace(/\[id=[^\]]*\]/g, "")
 				.trim();
 
 			this.broadcastMessage({ type: "typing", user: botName, isTyping: false });
 
-			if (!fullText) return;
+			if (!fullText) throw new Error("Provider returned an empty completion");
 
 			// Parse tool calls
 			const { chat, cssAdd, cssEdits, cssReset, clearMessages, edits, deletes, pageAdds, pageEdits } = parseKimiResponse(fullText);
@@ -1031,12 +1048,14 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 			console.error(botName, "failed:", errMsg);
 			const errChat: ChatMessage = {
 				id: `${msgId}-err`,
-				content: `Something went wrong: ${errMsg.slice(0, 200)}`,
+				content: `${botName} couldn't respond right now. Please try again later.`,
 				user: botName,
 				role: "assistant",
 			};
 			this.saveMessage(errChat);
 			this.broadcastMessage({ type: "add", ...errChat });
+		} finally {
+			clearInterval(typingHeartbeat);
 		}
 	}
 
@@ -1051,15 +1070,30 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 		state.timestamps.push(now);
 		(connection as any)._rl = state;
 
-		const parsed = JSON.parse(message as string) as Message;
+		if (typeof message !== "string" || message.length > 64_000) return;
+		let parsed: Message;
+		try { parsed = JSON.parse(message); } catch { return; }
+		if (!parsed || typeof parsed !== "object") return;
+		if (parsed.type === "typing") {
+			if (typeof parsed.user === "string" && parsed.user.length <= 80 && typeof parsed.isTyping === "boolean") {
+				this.broadcastMessage({ type: "typing", user: parsed.user, isTyping: parsed.isTyping });
+			}
+			return;
+		}
+		// Only the server can create bot replies, replace history, or edit content.
+		if (parsed.type !== "add" || parsed.role !== "user"
+			|| typeof parsed.id !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(parsed.id)
+			|| parsed.id.startsWith("bot-") || this.messages.some((m) => m.id === parsed.id)
+			|| typeof parsed.user !== "string" || !parsed.user.trim() || parsed.user.length > 80
+			|| typeof parsed.content !== "string" || !parsed.content.trim() || parsed.content.length > 10_000) return;
 
 		// Silent moderation: drop slurs and memecoin spam (skip bot messages)
-		if ((parsed.type === "add" || parsed.type === "update") && parsed.role !== "assistant" && (isModerated(parsed.content) || isModerated(parsed.user))) {
+		if (isModerated(parsed.content) || isModerated(parsed.user)) {
 			return; // silently drop
 		}
 
 		// Repetitive spam detection: same user sending same/similar message 3+ times in 30s
-		if ((parsed.type === "add") && parsed.role !== "assistant") {
+		{
 			const spam = (connection as any)._spam || { msgs: [] as { text: string; time: number }[] };
 			const normalized = parsed.content.replace(/\s+/g, "").toLowerCase();
 			spam.msgs = spam.msgs.filter((m: { time: number }) => now - m.time < 30000);
@@ -1072,41 +1106,20 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 		}
 
 		// Claude Haiku moderation: every user message gets reviewed before broadcast
-		if ((parsed.type === "add" || parsed.type === "update") && parsed.role !== "assistant") {
-			const allowed = await this.moderateWithHaiku(parsed.content, parsed.user);
-			if (!allowed) return; // silently drop
-		}
+		const allowed = await this.moderateWithHaiku(parsed.content, parsed.user);
+		if (!allowed) return;
 
-		this.broadcast(message);
+		this.broadcastMessage(parsed);
+		this.saveMessage(parsed);
 
-		if (parsed.type === "add" || parsed.type === "update") {
-			this.saveMessage(parsed);
-
-			// Per-connection LLM rate limit: prevent one user from draining budget
-			if (parsed.type === "add" && parsed.role !== "assistant" && !this.isConnectionLLMRateLimited(connection)) {
-				if (KIMI_PATTERN.test(parsed.content)) {
-					await this.sendBotReply(
-						"Kimi K2.5",
-						"moonshotai/kimi-k2.5",
-						buildSystemPrompt(this.customCss, this.pages),
-					);
-				} else if (COGITO_PATTERN.test(parsed.content) || Math.random() < 0.2) {
-					await this.sendBotReply(
-						"Cogito v2.1",
-						"deepcogito/cogito-v2.1-671b",
-						`You are chatting at gnome.science.\n${TOOL_DOCS}`,
-						1024,
-						10,
-					);
-				} else if (CLAUDE_PATTERN.test(parsed.content) || Math.random() < 0.1) {
-					await this.sendBotReply(
-						"Claude",
-						"anthropic/claude-haiku-4.5",
-						`You are chatting at gnome.science.\n${TOOL_DOCS}`,
-						1024,
-					);
-				}
-			}
+		const bot = selectBot(parsed.content);
+		if (!bot || this.isConnectionLLMRateLimited(connection)) return;
+		if (bot === "kimi") {
+			await this.sendBotReply("Kimi K2.5", KIMI_MODEL, buildSystemPrompt(this.customCss, this.pages));
+		} else if (bot === "cogito") {
+			await this.sendBotReply("Cogito v2.1", COGITO_MODEL, `You are chatting at gnome.science.\n${TOOL_DOCS}`, 1024, 10);
+		} else if (bot === "claude") {
+			await this.sendBotReply("Claude", CLAUDE_MODEL, `You are chatting at gnome.science.\n${TOOL_DOCS}`, 1024);
 		}
 	}
 
@@ -1155,11 +1168,12 @@ const SPA_ROUTES = /^\/(chat|pages)(\/|$)/;
 export default {
 	async fetch(request, env) {
 		const url = new URL(request.url);
+		if (url.pathname.startsWith("/__cogito/")) return env.COGITO_RELAY.getByName("cogito").fetch(request);
 		if (url.pathname === "/transformer" || url.pathname === "/transformer.html" || url.pathname.startsWith("/transformer/")) {
 			return new Response("Gone", { status: 410 });
 		}
 
-		const partyResponse = await routePartykitRequest(request, env as unknown as Record<string, unknown>);
+		const partyResponse = await routePartykitRequest(request, env);
 		if (partyResponse) return partyResponse;
 
 		// SPA fallback: serve index.html for client-side routes

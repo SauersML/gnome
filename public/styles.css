@@ -728,6 +728,21 @@ html, body {
 		0 0 48px rgba(106, 236, 120, 0.1);
 }
 
+.felony-bench-link {
+	color: #ff5353;
+	font-family: "Syne", sans-serif;
+	font-size: 20px;
+	font-weight: 700;
+	text-decoration: none;
+	letter-spacing: -0.02em;
+}
+
+.felony-bench-link:hover {
+	color: #ff8181;
+	text-decoration: underline;
+	text-underline-offset: 5px;
+}
+
 .home-nav {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
@@ -867,5 +882,4 @@ html, body {
 		padding: 0 clamp(16px, 5vw, 28px);
 	}
 }
-
 

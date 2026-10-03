@@ -6,12 +6,16 @@
 		{
 			"new_sqlite_classes": ["Chat"],
 			"tag": "v1"
+		},
+		{
+			"new_sqlite_classes": ["CogitoRelay"],
+			"tag": "v2"
 		}
 	],
 	"assets": {
 		"directory": "./public",
 		"binding": "ASSETS",
-		"run_worker_first": ["/parties/*", "/transformer", "/transformer/*", "/transformer.html"],
+		"run_worker_first": ["/parties/*", "/__cogito/*", "/transformer", "/transformer/*", "/transformer.html"],
 		"not_found_handling": "single-page-application"
 	},
 	"build": {
@@ -22,6 +26,10 @@
 			{
 				"class_name": "Chat",
 				"name": "Chat"
+			},
+			{
+				"class_name": "CogitoRelay",
+				"name": "COGITO_RELAY"
 			}
 		]
 	},
