@@ -1154,11 +1154,15 @@ const SPA_ROUTES = /^\/(chat|pages)(\/|$)/;
 
 export default {
 	async fetch(request, env) {
+		const url = new URL(request.url);
+		if (url.pathname === "/transformer" || url.pathname === "/transformer.html" || url.pathname.startsWith("/transformer/")) {
+			return new Response("Gone", { status: 410 });
+		}
+
 		const partyResponse = await routePartykitRequest(request, env as unknown as Record<string, unknown>);
 		if (partyResponse) return partyResponse;
 
 		// SPA fallback: serve index.html for client-side routes
-		const url = new URL(request.url);
 		if (SPA_ROUTES.test(url.pathname)) {
 			return env.ASSETS.fetch(new Request(new URL("/", request.url), request));
 		}
