@@ -230,6 +230,7 @@ export class BeeAgent extends DurableObject<Env> {
 		const ranked = rankAmbient(posts, await this.similarity(posts), { self: s.did, bees: new Set(bees), handled: (u) => this.handled(u), spoken: this.spoken(), now: Date.now() });
 		const top = ranked.slice(0, 3).map((c) => ({ to: c.handle, similarity: +c.similarity.toFixed(3), keywords: c.keywords, text: snippet(c.text) }));
 		for (const c of ranked.slice(0, 3)) {
+			this.markHandled(c.uri, "answering");
 			const outcome = await this.talk(bee, s, c);
 			this.markHandled(c.uri, outcome);
 			if (outcome === "replied") return { candidates: ranked.length, top };
@@ -266,6 +267,8 @@ export class BeeAgent extends DurableObject<Env> {
 			let actions = 0;
 			for (const n of pending) {
 				if (actions >= MAX_ACTIONS_PER_TICK) break;
+				// Recorded before replying, so a restart mid-reply can never make her answer twice.
+				this.markHandled(n.uri, "answering");
 				let outcome: string;
 				try {
 					if (TALK_REASONS.has(n.reason)) outcome = await this.talk(bee, s, toPost(n));
@@ -281,7 +284,7 @@ export class BeeAgent extends DurableObject<Env> {
 				summary[n.reason] = ((summary[n.reason] as number) ?? 0) + 1;
 			}
 			if (pending.length) await xrpc(PDS, "town.delve.notification.updateSeen", { body: { seenAt: new Date().toISOString() }, jwt: s.accessJwt, proxy: true });
-			const waiting = pending.filter((n) => !this.handled(n.uri)).length;
+			const waiting = pending.length - pending.filter((n) => this.handled(n.uri)).length;
 			if (actions || waiting) {
 				console.log(JSON.stringify({ ...summary, actions, waiting }));
 				return;
