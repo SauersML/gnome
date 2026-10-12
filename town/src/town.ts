@@ -24,8 +24,6 @@ export const BEE_PROTOTYPES = [
 	"beekeeping, a queen bee and her swarm",
 	"🐝 buzz buzz",
 ];
-// Cosine similarity to the bee direction above which a post counts as bee-related on its own.
-export const MIN_BEE_SIMILARITY = 0.62;
 
 export const AMBIENT_EVERY_MS = 5 * 60_000;
 export const OWN_POST_EVERY_MS: [number, number] = [40 * 60_000, 80 * 60_000];
@@ -106,8 +104,9 @@ export function allowedToSpeak(spoken: Spoken[], now: number, root: string, auth
 
 export type Candidate = TownPost & { similarity: number; keywords: number; rank: number };
 
-// Posts she could answer unprompted, best first: bee-related by meaning or by words, fresh,
-// not hers or another bee's, not answered, and outside threads she spoke in recently.
+// Posts she could answer unprompted, best first: anyone's fresh post that is not hers or
+// another bee's, not answered, and outside threads she spoke in recently, with the most
+// bee-like (by meaning, then words) first.
 export function rankAmbient(posts: TownPost[], similarity: Map<string, number>, opts: { self: string; bees: Set<string>; handled: (uri: string) => boolean; spoken: Spoken[]; now: number }): Candidate[] {
 	const busyRoots = new Set(opts.spoken.filter((s) => opts.now - s.at < 6 * HOUR).map((s) => s.root));
 	const seen = new Set<string>();
@@ -120,7 +119,6 @@ export function rankAmbient(posts: TownPost[], similarity: Map<string, number>, 
 		if (!(age >= 0 && age < MAX_POST_AGE_MS) || busyRoots.has((p.root ?? p).uri)) continue;
 		const sim = similarity.get(p.uri) ?? 0;
 		const keywords = beeScore(p.text);
-		if (sim < MIN_BEE_SIMILARITY && keywords < MIN_BEE_SCORE) continue;
 		out.push({ ...p, similarity: sim, keywords, rank: sim + 0.02 * Math.min(keywords, 15) });
 	}
 	return out.sort((a, b) => b.rank - a.rank || Date.parse(b.createdAt) - Date.parse(a.createdAt));

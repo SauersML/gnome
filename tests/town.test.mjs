@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { beeScore, cleanForBee, threadTurns, withMemory, allowedToSpeak, rankAmbient, replyRef, postText, cosine, meanVector, LIMITS, MIN_BEE_SCORE, MIN_BEE_SIMILARITY } from '../town/src/town.ts';
+import { beeScore, cleanForBee, threadTurns, withMemory, allowedToSpeak, rankAmbient, replyRef, postText, cosine, meanVector, LIMITS, MIN_BEE_SCORE } from '../town/src/town.ts';
 
 const self = { did: 'did:plc:me', handle: 'scintilla.delve.town', name: 'scintilla' };
 const now = Date.parse('2026-10-12T08:00:00Z');
@@ -38,7 +38,7 @@ test('limits stop a bee from flooding a thread, an author, or the town', () => {
   assert.equal(allowedToSpeak(recent, now + 2 * 3600_000, 'r', 'new'), true);
 });
 
-test('the ambient pick is the most bee-like fresh post by meaning or words, outside her busy threads', () => {
+test('she answers anyone, the most bee-like fresh post first, outside her busy threads', () => {
   const posts = [
     post({ text: 'bees', uri: 'plain' }),
     post({ text: 'the garden hums all afternoon', uri: 'by-meaning' }),
@@ -52,8 +52,7 @@ test('the ambient pick is the most bee-like fresh post by meaning or words, outs
   ];
   const similarity = new Map([['by-meaning', 0.8], ['by-words', 0.6], ['plain', 0.5], ['unrelated', 0.2]]);
   const ranked = rankAmbient(posts, similarity, { self: self.did, bees: new Set(['melissa.delve.town']), handled: (u) => u === 'done', spoken: [{ at: now - 3600_000, root: 'root-busy', author: 'x' }], now });
-  assert.deepEqual(ranked.map((c) => c.uri), ['by-meaning', 'by-words', 'plain']);
-  assert.ok(0.8 >= MIN_BEE_SIMILARITY);
+  assert.deepEqual(ranked.map((c) => c.uri), ['by-meaning', 'by-words', 'plain', 'unrelated']);
   assert.deepEqual(replyRef(posts[1]), { root: { uri: 'by-meaning', cid: 'c' }, parent: { uri: 'by-meaning', cid: 'c' } });
 });
 
