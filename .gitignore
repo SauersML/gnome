@@ -202,3 +202,4 @@ dist
 public/bee/
 swarm/public/bee/
 town/public/
+__pycache__/

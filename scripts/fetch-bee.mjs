@@ -1,9 +1,11 @@
 // Downloads pinned BeeLLM weights, verifies them, and writes each model to <dir>/bee/ as
 // parts below the 25 MiB static-asset limit plus <file>.json describing the parts.
 // Usage: node scripts/fetch-bee.mjs <public dir, relative to the repo root> <model>...
-// Models already present with the pinned hash are skipped.
+// Models already present with the pinned hash are skipped. Post-trained models (train/) are
+// not published; they are read from ~/BeeLLM/models on the machine that deploys.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 
 const REVISION = "62fc7082eebc184cc5177a67107318196aee69f7";
 const PINS = {
@@ -28,10 +30,15 @@ for (const model of models) {
 	const file = `${model}.gguf`;
 	const manifestPath = new URL(`${file}.json`, out);
 	if (existsSync(manifestPath) && JSON.parse(readFileSync(manifestPath, "utf8")).sha256 === sha256) continue;
-	const url = `https://huggingface.co/schizophyllume/BeeLLM/resolve/${REVISION}/${file}`;
-	const res = await fetch(url);
-	if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-	const data = Buffer.from(await res.arrayBuffer());
+	let data;
+	if (PINS[model].local) {
+		data = readFileSync(`${homedir()}/BeeLLM/models/${file}`);
+	} else {
+		const url = `https://huggingface.co/schizophyllume/BeeLLM/resolve/${REVISION}/${file}`;
+		const res = await fetch(url);
+		if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+		data = Buffer.from(await res.arrayBuffer());
+	}
 	const got = createHash("sha256").update(data).digest("hex");
 	if (data.length !== bytes || got !== sha256) throw new Error(`${file}: got ${data.length} bytes, sha256 ${got}`);
 	const parts = [];

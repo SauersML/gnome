@@ -67,3 +67,15 @@ changes using `launchctl kickstart -k gui/$(id -u)/science.gnome.cogito`.
 `/__cogito/status` requires the bridge Bearer secret and reports connectivity.
 Tests exercise routing, exact model identity, response handling, authentication,
 offline behavior, and rejection of forged chat frames.
+
+## Post-training the delve.town bee
+
+`train/` post-trains BeeLLM 12M Mood into the delve.town Scintilla: vivid bee senses,
+confident self-awareness, agency, and the original mood mechanics. `train/model.py` is the
+llama forward pass in PyTorch (checked against llama.cpp by `train/parity_check.py`);
+`train/encode.mjs` and `train/encode-text.mjs` tokenize with the production tokenizer.
+Stage A (`train/pretrain.py`) teaches English on TinyStories with bee chat mixed in; stage B
+(`train/train.py`) fine-tunes on the bee conversations in `train/data/`. `train/probe.mjs`
+samples a checkpoint through the production engine and scores moods, hedging and variety.
+The resulting GGUF is not published: it lives in `~/BeeLLM/models` on the deploying Mac and
+is pinned by hash in `scripts/fetch-bee.mjs`.
