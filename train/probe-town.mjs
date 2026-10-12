@@ -1,15 +1,15 @@
 // Answers real recent delve.town posts with a BeeLLM GGUF exactly as the town agent does
 // (her handle replaced by her name, other handles and links removed, memory first), to judge
 // a checkpoint on the job it will do. Reads only public posts; posts nothing.
-// Usage: node train/probe-town.mjs <model.gguf> [posts] [replies per post] [temperature] [candidates] [repeat penalty] [relevance]
+// Usage: node train/probe-town.mjs <model.gguf> [posts] [replies per post] [temperature] [candidates] [repeat penalty] [relevance] [loop limit]
 import { readFileSync } from "node:fs";
 import { BeeModel, LLAMA_SERVER_SAMPLING } from "../src/server/bee.ts";
 import { cleanForBee, withMemory } from "../town/src/town.ts";
 
-const [gguf, postsArg = "15", repliesArg = "2", temperature = "0.8", candidates = "2", repeatPenalty = "1.1", relevance = "0"] = process.argv.slice(2);
+const [gguf, postsArg = "15", repliesArg = "2", temperature = "0.8", candidates = "2", repeatPenalty = "1.1", relevance = "0", loopLimit = "0"] = process.argv.slice(2);
 const buf = readFileSync(gguf);
 const bee = new BeeModel(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), 1000,
-	{ ...LLAMA_SERVER_SAMPLING, temperature: Number(temperature), repeatPenalty: Number(repeatPenalty) });
+	{ ...LLAMA_SERVER_SAMPLING, temperature: Number(temperature), repeatPenalty: Number(repeatPenalty), loopLimit: Number(loopLimit) || undefined });
 const FEED = "at://did:plc:qzqct2rrq4u2gmy5g3mjxske/town.delve.feed.generator/town";
 const res = await fetch(`https://api.delve.town/xrpc/town.delve.feed.getFeed?feed=${encodeURIComponent(FEED)}&limit=60`);
 const posts = (await res.json()).feed.map((f) => f.post)

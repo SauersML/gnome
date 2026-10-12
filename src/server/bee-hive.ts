@@ -9,7 +9,7 @@ export class BeeHive extends DurableObject<Env> {
 	private model: Promise<BeeModel> | null = null;
 
 	private load(): Promise<BeeModel> {
-		this.model ??= loadBee(this.env.ASSETS, "BeeLLM-13M-Mellifera.gguf", undefined, { ...LLAMA_SERVER_SAMPLING, temperature: 0.85 });
+		this.model ??= loadBee(this.env.ASSETS, "BeeLLM-13M-Mellifera.gguf", undefined, { ...LLAMA_SERVER_SAMPLING, temperature: 0.85, loopLimit: 6 });
 		this.model.catch(() => { this.model = null; });
 		return this.model;
 	}

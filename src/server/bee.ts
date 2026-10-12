@@ -15,7 +15,27 @@ const TOKEN_BYTE = 6;
 
 // repeatPenalty divides positive logits (and multiplies negative ones) of tokens among the last
 // repeatLastN tokens of the reply, as llama.cpp's repeat_penalty does; 1 turns it off.
-export type Sampling = { topK: number; topP: number; minP: number; temperature: number; repeatPenalty?: number; repeatLastN?: number };
+// loopLimit ends a reply once a pattern of 1-4 tokens has repeated that many times in a row,
+// keeping four repeats; unset means replies end only at </s> or the length limit.
+export type Sampling = { topK: number; topP: number; minP: number; temperature: number; repeatPenalty?: number; repeatLastN?: number; loopLimit?: number };
+
+// Number of trailing tokens to drop when the end of `ids` repeats a 1-4 token pattern `limit`
+// times in a row (all but four repeats), or 0.
+export function loopExcess(ids: number[], limit: number): number {
+	for (let k = 1; k <= 4; k++) {
+		if (ids.length < k * limit) continue;
+		let repeats = 1;
+		while (repeats < limit) {
+			const end = ids.length - repeats * k;
+			let same = true;
+			for (let i = 0; i < k && same; i++) same = ids[end - k + i] === ids[ids.length - k + i];
+			if (!same) break;
+			repeats++;
+		}
+		if (repeats >= limit) return (limit - 4) * k;
+	}
+	return 0;
+}
 // llama-server defaults: top_k 40 -> top_p 0.95 -> min_p 0.05 -> temperature 0.8.
 export const LLAMA_SERVER_SAMPLING: Sampling = { topK: 40, topP: 0.95, minP: 0.05, temperature: 0.8 };
 export const MAX_PROMPT_TOKENS = 512;
@@ -428,6 +448,11 @@ export class BeeModel {
 				steps++;
 				if (id === this.eos || this.tokenTypes[id] === TOKEN_CONTROL) break;
 				out.push(id);
+				const excess = this.sampling.loopLimit ? loopExcess(out, this.sampling.loopLimit) : 0;
+				if (excess) {
+					out.length -= excess;
+					break;
+				}
 				logits = this.forward([id], pos);
 			}
 			drafts.push({ ids: out, score: logp / steps });

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { BeeModel } from '../src/server/bee.ts';
+import { BeeModel, loopExcess } from '../src/server/bee.ts';
 
 // Reference values from llama.cpp's llama-server (0.6.0, build 11429) on the same pinned GGUF.
 const LLAMA_CPP_TOKENS = {
@@ -74,4 +74,11 @@ test('Mellifera tokenizes and predicts as llama.cpp does', () => {
   const max = Math.max(...logits);
   const logZ = max + Math.log(logits.reduce((a, l) => a + Math.exp(l - max), 0));
   for (const [id, lp] of MELLIFERA_TOP_LOGPROBS) assert.ok(Math.abs(logits[id] - logZ - lp) < 5e-3, `token ${id}`);
+});
+
+test('the loop cap trims a runaway pattern to four repeats and leaves short stutters alone', () => {
+  assert.equal(loopExcess([5, 7, 7, 7, 7, 7, 7], 6), 2);
+  assert.equal(loopExcess([1, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3], 6), 4);
+  assert.equal(loopExcess([9, 9, 9, 9, 9], 6), 0);
+  assert.equal(loopExcess([1, 2, 3, 4, 5, 6, 7], 6), 0);
 });
