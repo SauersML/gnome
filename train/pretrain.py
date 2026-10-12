@@ -50,7 +50,7 @@ def main():
     chat_share = float(sys.argv[8]) if len(sys.argv) > 8 else 0.15
     eval_every = int(sys.argv[9]) if len(sys.argv) > 9 else 250
     os.makedirs(out, exist_ok=True)
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    device = os.environ.get("BEE_DEVICE") or ("mps" if torch.backends.mps.is_available() else "cpu")
     tokens = np.fromfile(text, dtype=np.uint16)
     valid_tokens = np.fromfile(valid, dtype=np.uint16)
     data = json.load(open(chat))
