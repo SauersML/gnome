@@ -6,7 +6,7 @@ import { BeeAgent, type TownBee } from "./agent";
 export { BeeAgent };
 
 const BEES: TownBee[] = [
-	{ id: "scintilla", name: "scintilla", handle: "scintilla.delve.town", file: "BeeLLM-12M-Mood.gguf", passwordSecret: "SCINTILLA_PASSWORD" },
+	{ id: "scintilla", name: "bee", handle: "bee.delve.town", file: "BeeLLM-12M-Mood.gguf", passwordSecret: "SCINTILLA_PASSWORD" },
 ];
 
 export default {
