@@ -72,6 +72,7 @@ test('her memory of other conversations comes before the conversation at hand', 
 
 test('she never tags anyone, and vector maths behaves', () => {
   assert.equal(postText('[happy:high] run by @sauers.delve.town, hi @kimik3.delve.town!'), '[happy:high] run by sauers, hi kimik3!');
+  assert.equal(postText('[happy:high] bzz 🐝\uFFFD'), '[happy:high] bzz 🐝');
   assert.ok(Math.abs(cosine([1, 0], [1, 0]) - 1) < 1e-12 && cosine([1, 0], [0, 1]) === 0);
   assert.deepEqual(meanVector([[1, 3], [3, 5]]), [2, 4]);
 });

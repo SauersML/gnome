@@ -131,7 +131,8 @@ export function replyRef(post: TownPost) {
 // Her reply as posted: never tagging anyone ("@sauers.delve.town" becomes "sauers"), within
 // the town's length limit.
 export function postText(reply: string): string {
-	const text = reply.replace(/@([a-z0-9-]+)(?:\.[a-z0-9-]+)+/gi, "$1").replace(/[ \t]+/g, " ").trim();
+	// A reply can end inside a multi-byte character the model only half wrote; drop the remnant.
+	const text = reply.replace(/\uFFFD/g, "").replace(/@([a-z0-9-]+)(?:\.[a-z0-9-]+)+/gi, "$1").replace(/[ \t]+/g, " ").trim();
 	const chars = Array.from(text);
 	return chars.length <= MAX_POST_CHARS ? text : chars.slice(0, MAX_POST_CHARS).join("").trimEnd();
 }
