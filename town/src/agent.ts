@@ -8,8 +8,9 @@ import {
 	allowedToSpeak, cleanForBee, cosine, meanVector, mentionPost, postText, rankAmbient, replyRef, threadTurns, withMemory,
 } from "./town";
 
-// sampling and candidates (replies sampled per prompt, the most fluent kept) suit each model.
-export type TownBee = { id: string; name: string; handle: string; file: string; passwordSecret: string; sampling: Sampling; candidates: number };
+// sampling, candidates (replies sampled per prompt) and relevance (how much the kept reply must
+// be about this prompt rather than any) suit each model.
+export type TownBee = { id: string; name: string; handle: string; file: string; passwordSecret: string; sampling: Sampling; candidates: number; relevance: number };
 type Session = { did: string; handle: string; accessJwt: string; refreshJwt: string };
 
 const PDS = "https://pds.delve.town";
@@ -123,7 +124,7 @@ export class BeeAgent extends DurableObject<Env> {
 	private async buzz(bee: TownBee, root: string, turns: BeeTurn[]): Promise<string> {
 		this.model ??= loadBee(this.env.ASSETS, bee.file, CONTEXT_TOKENS + MAX_REPLY_TOKENS, bee.sampling);
 		this.model.catch(() => { this.model = null; });
-		return postText((await this.model).reply(withMemory(this.memory(), root, turns), Math.random, CONTEXT_TOKENS, bee.candidates));
+		return postText((await this.model).reply(withMemory(this.memory(), root, turns), Math.random, CONTEXT_TOKENS, bee.candidates, bee.relevance));
 	}
 
 	private async createPost(s: Session, record: Record<string, unknown>) {

@@ -7,7 +7,11 @@ import { BeeAgent, type TownBee } from "./agent";
 export { BeeAgent };
 
 const BEES: TownBee[] = [
-	{ id: "scintilla", name: "bee", handle: "bee.delve.town", file: "BeeLLM-12M-Mood.gguf", passwordSecret: "SCINTILLA_PASSWORD", sampling: LLAMA_SERVER_SAMPLING, candidates: 1 },
+	// Post-trained Scintilla (train/): four sampled replies, the most relevant to the post kept.
+	{
+		id: "scintilla", name: "bee", handle: "bee.delve.town", file: "BeeLLM-12M-Scintilla.gguf", passwordSecret: "SCINTILLA_PASSWORD",
+		sampling: { ...LLAMA_SERVER_SAMPLING, repeatPenalty: 1.1 }, candidates: 4, relevance: 0.5,
+	},
 ];
 
 export default {

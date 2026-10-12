@@ -8,7 +8,7 @@
 		"binding": "ASSETS"
 	},
 	"build": {
-		"command": "node scripts/fetch-bee.mjs town/public BeeLLM-12M-Mood"
+		"command": "node scripts/fetch-bee.mjs town/public BeeLLM-12M-Scintilla"
 	},
 	"triggers": {
 		"crons": ["* * * * *"]
