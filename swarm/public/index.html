@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bee Swarm</title>
+<meta name="description" content="Six tiny language models that buzz. Say something and the swarm answers.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+	--bg: #16120a; --bg-2: #1f190e; --panel: #241d10; --line: #3a2f19;
+	--ink: #f7ecd4; --muted: #b6a47f; --faint: #7d6d4c;
+	--honey: #f5b301; --honey-ink: #1b1405;
+	--you-bg: #f5b301; --you-ink: #1b1405;
+	--comb: rgba(245, 179, 1, 0.06);
+	--b-scintilla: #f5b301; --b-melissa: #ff8a3d; --b-bombus: #ff6b6b;
+	--b-apis: #7cc4ff; --b-zuzu: #9be37a; --b-bzz: #c9a2ff;
+	--name-mix: 100%;
+	color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+	:root {
+		--bg: #fff7e3; --bg-2: #fff1cf; --panel: #fffaf0; --line: #ecd9a8;
+		--ink: #2a2010; --muted: #7a6438; --faint: #a8915e;
+		--you-bg: #2a2010; --you-ink: #fff3d6;
+		--comb: rgba(176, 120, 0, 0.07);
+		--name-mix: 62%;
+		color-scheme: light;
+	}
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+	background: var(--bg);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='98' viewBox='0 0 56 98'%3E%3Cpath d='M28 66L0 50V16L28 0l28 16v34L28 66zm0 32V66m0-66' fill='none' stroke='%23f5b301' stroke-opacity='0.07' stroke-width='1.5'/%3E%3C/svg%3E");
+	color: var(--ink);
+	font: 16px/1.45 "Hanken Grotesk", system-ui, sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+.app { height: 100dvh; max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; padding: 0 16px; }
+header { padding: 18px 0 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+h1 { margin: 0; font: 800 clamp(26px, 6vw, 36px)/1 "Fraunces", Georgia, serif; letter-spacing: -0.02em; }
+h1 span { color: var(--honey); }
+.tagline { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
+.clear { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.clear:hover { color: var(--ink); border-color: var(--faint); }
+
+.roster { display: flex; gap: 6px; overflow-x: auto; padding: 8px 0 12px; scrollbar-width: none; border-bottom: 1px solid var(--line); }
+.roster::-webkit-scrollbar { display: none; }
+.member { flex: 1 0 74px; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 74px; }
+.hex { width: 46px; height: 52px; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); background: var(--c); display: grid; place-items: center; font-size: 22px; position: relative; transition: transform .2s; }
+.hex::after { content: ""; position: absolute; inset: 3px; clip-path: inherit; background: color-mix(in oklab, var(--c) 35%, var(--bg)); z-index: 0; }
+.hex b { position: relative; z-index: 1; font-style: normal; }
+.member .name { font-weight: 600; font-size: 13px; color: color-mix(in oklab, var(--c) var(--name-mix), var(--ink)); }
+.member .model { font-size: 10.5px; color: var(--faint); letter-spacing: .02em; }
+.member .mood { font-size: 13px; height: 18px; }
+.member.active .hex { animation: buzz .18s linear infinite alternate; }
+@keyframes buzz { from { transform: translate(-1px, 0) rotate(-3deg); } to { transform: translate(1px, -1px) rotate(3deg); } }
+
+.log { flex: 1; overflow-y: auto; padding: 16px 0 8px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+.empty { margin: auto; text-align: center; color: var(--muted); max-width: 380px; padding: 24px 0; }
+.empty .big { font: 600 22px/1.25 "Fraunces", Georgia, serif; color: var(--ink); margin-bottom: 6px; }
+.row { display: flex; gap: 10px; align-items: flex-end; max-width: 100%; animation: pop .22s ease-out; }
+@keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.row.you { justify-content: flex-end; }
+.row.you .bubble { background: var(--you-bg); color: var(--you-ink); border-radius: 18px 18px 4px 18px; font-weight: 500; }
+.row .mini { flex: none; width: 28px; height: 32px; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); background: var(--c); display: grid; place-items: center; font-size: 14px; }
+.bubble { background: var(--panel); border: 1px solid var(--line); border-radius: 18px 18px 18px 4px; padding: 8px 13px; max-width: min(78%, 520px); overflow-wrap: anywhere; }
+.row.you .bubble { border: none; }
+.who { font-size: 12.5px; font-weight: 600; color: color-mix(in oklab, var(--c) var(--name-mix), var(--ink)); display: flex; gap: 6px; align-items: center; margin-bottom: 1px; }
+.who .chip { font-weight: 500; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: color-mix(in oklab, var(--c) 18%, transparent); color: var(--muted); }
+.who .chip.high { color: var(--ink); background: color-mix(in oklab, var(--c) 34%, transparent); }
+.text em { color: var(--muted); }
+.typing .dots span { display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%; background: var(--c); animation: dot 1s infinite ease-in-out; }
+.typing .dots span:nth-child(2) { animation-delay: .15s; } .typing .dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.note { align-self: center; color: var(--faint); font-size: 12.5px; font-style: italic; padding: 2px 10px; }
+
+.composer { padding: 8px 0 max(14px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: linear-gradient(to bottom, transparent, var(--bg) 30%); }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chips button { flex: none; background: var(--bg-2); border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+.chips button:hover { color: var(--ink); border-color: var(--honey); }
+form { display: flex; gap: 8px; }
+input { flex: 1; min-width: 0; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 999px; padding: 12px 16px; font: inherit; outline: none; }
+input:focus { border-color: var(--honey); }
+input::placeholder { color: var(--faint); }
+.send { background: var(--honey); color: var(--honey-ink); border: none; border-radius: 999px; padding: 0 18px; font: 600 15px "Hanken Grotesk", sans-serif; cursor: pointer; }
+.send:disabled { opacity: .5; cursor: default; }
+footer { text-align: center; color: var(--faint); font-size: 11.5px; padding-top: 8px; }
+footer a { color: var(--muted); }
+@media (max-width: 520px) {
+	.roster { gap: 2px; }
+	.member { flex: 1 1 0; min-width: 0; }
+	.hex { width: 38px; height: 43px; font-size: 18px; }
+	.member .name { font-size: 12px; }
+	.member .model { font-size: 9.5px; white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) { .member.active .hex, .row, .typing .dots span { animation: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+	<header>
+		<div>
+			<h1>the <span>swarm</span></h1>
+			<p class="tagline">Six tiny language models that buzz. Say something.</p>
+		</div>
+		<button class="clear" id="clear" type="button">new hive</button>
+	</header>
+	<div class="roster" id="roster" aria-label="The bees"></div>
+	<main class="log" id="log" aria-live="polite"></main>
+	<div class="composer">
+		<div class="chips" id="chips"></div>
+		<form id="form" autocomplete="off">
+			<input id="input" maxlength="300" placeholder="say something to the swarm…" aria-label="Message">
+			<button class="send" id="send">Buzz</button>
+		</form>
+		<footer>Models: <a href="https://huggingface.co/schizophyllume/BeeLLM" target="_blank" rel="noopener">BeeLLM</a> by schizophyllume, from 10K to 12M parameters, running on Cloudflare. Also at <a href="https://gnome.science/chat">gnome.science/chat</a>.</footer>
+	</div>
+</div>
+<script>
+const BEES = [
+	{ id: "scintilla", name: "Scintilla", model: "12M Mood" },
+	{ id: "melissa", name: "Melissa", model: "1M Mood" },
+	{ id: "bombus", name: "Bombus", model: "1M Chaos" },
+	{ id: "apis", name: "Apis", model: "42P Chaos" },
+	{ id: "zuzu", name: "Zuzu", model: "42P" },
+	{ id: "bzz", name: "Bzz", model: "30P" },
+];
+const BY_ID = Object.fromEntries(BEES.map((b) => [b.id, b]));
+const MOODS = { neutral: "😐", happy: "😊", loving: "🥰", sad: "😢", angry: "😠", confused: "😵‍💫" };
+// Chance that the swarm keeps going after each reply: everyone is keen at first, then it dies down.
+const KEEP_BUZZING = [1, 1, 1, 0.8, 0.65, 0.5, 0.35, 0.2, 0.1];
+const SUGGESTIONS = ["hi bees!", "*gives you a flower*", "scintilla, what's your name?", "*swats you*", "sorry", "i love you all", "*puts you in a jar*", "*opens the jar*", "sing for me"];
+const STORE = "bee-swarm-v1";
+const $ = (id) => document.getElementById(id);
+const log = $("log"), input = $("input");
+
+let transcript = [];
+try { transcript = JSON.parse(localStorage.getItem(STORE) || "[]").filter((e) => e && typeof e.text === "string" && (e.who === "you" || BY_ID[e.who])); } catch {}
+let round = 0;
+
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify(transcript.slice(-200))); } catch {} };
+const escape = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const format = (s) => escape(s).replace(/\*([^*\n]{1,80})\*/g, "<em>*$1*</em>");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const parseMood = (text) => {
+	const m = text.match(/^\s*\[([a-z]+):([a-z]+)\]\s*/i);
+	return m ? { mood: m[1].toLowerCase(), level: m[2].toLowerCase(), rest: text.slice(m[0].length) } : { rest: text };
+};
+
+function renderRoster(active) {
+	$("roster").innerHTML = BEES.map((b) => {
+		const last = [...transcript].reverse().find((e) => e.who === b.id);
+		const mood = last && parseMood(last.text).mood;
+		return `<div class="member${active === b.id ? " active" : ""}" style="--c: var(--b-${b.id})" title="${b.name}: BeeLLM ${b.model}">
+			<div class="hex"><b>🐝</b></div><div class="name">${b.name}</div><div class="model">${b.model}</div>
+			<div class="mood">${mood && MOODS[mood] ? MOODS[mood] : ""}</div></div>`;
+	}).join("");
+}
+
+function scroll() { log.scrollTop = log.scrollHeight; }
+
+function beeRow(bee) {
+	const row = document.createElement("div");
+	row.className = "row";
+	row.style.setProperty("--c", `var(--b-${bee.id})`);
+	row.innerHTML = `<div class="mini">🐝</div><div class="bubble"><div class="who">${bee.name}</div><div class="text"></div></div>`;
+	return row;
+}
+
+function fillBee(row, bee, text) {
+	const { mood, level, rest } = parseMood(text);
+	const who = row.querySelector(".who");
+	who.innerHTML = `${bee.name}${mood ? ` <span class="chip${level === "high" ? " high" : ""}">${MOODS[mood] || ""} ${escape(mood)}${level === "high" ? "!" : ""}</span>` : ""}`;
+	return rest;
+}
+
+function addEntry(e) {
+	if (e.who === "you") {
+		const row = document.createElement("div");
+		row.className = "row you";
+		row.innerHTML = `<div class="bubble">${escape(e.text)}</div>`;
+		log.append(row);
+	} else {
+		const bee = BY_ID[e.who];
+		const row = beeRow(bee);
+		row.querySelector(".text").innerHTML = format(fillBee(row, bee, e.text));
+		log.append(row);
+	}
+}
+
+function note(text) {
+	const n = document.createElement("div");
+	n.className = "note";
+	n.textContent = text;
+	log.append(n);
+	scroll();
+}
+
+function renderAll() {
+	log.innerHTML = "";
+	if (!transcript.length) {
+		log.innerHTML = `<div class="empty"><div class="big">Six bees are listening.</div>Say hi, give them a flower, or call one by name. They answer one after another, buzz at each other for a bit, then settle down. Be nice: they remember.</div>`;
+	}
+	transcript.forEach(addEntry);
+	renderRoster();
+	scroll();
+}
+
+async function typeOut(el, text, myRound) {
+	const step = Math.max(8, Math.min(28, 1100 / Math.max(1, text.length)));
+	for (let i = 1; i <= text.length; i++) {
+		if (myRound !== round) { el.innerHTML = format(text); return; }
+		el.innerHTML = format(text.slice(0, i));
+		if (i % 3 === 0) scroll();
+		await sleep(step);
+	}
+	scroll();
+}
+
+function pickNext(said, spoken, last, k) {
+	if (k === 0) {
+		const named = BEES.find((b) => new RegExp(`\\b${b.name}\\b`, "i").test(said));
+		if (named) return named;
+	}
+	const pool = BEES.filter((b) => b.id !== last);
+	const fresh = pool.filter((b) => !spoken.has(b.id));
+	const from = fresh.length && Math.random() < 0.8 ? fresh : pool;
+	return from[Math.floor(Math.random() * from.length)];
+}
+
+async function swarm(said, myRound) {
+	const spoken = new Set();
+	let last = null;
+	for (let k = 0; k < KEEP_BUZZING.length && Math.random() < KEEP_BUZZING[k]; k++) {
+		if (myRound !== round) return;
+		const bee = pickNext(said, spoken, last, k);
+		renderRoster(bee.id);
+		const row = beeRow(bee);
+		row.classList.add("typing");
+		row.querySelector(".text").innerHTML = `<span class="dots"><span></span><span></span><span></span></span>`;
+		log.append(row);
+		scroll();
+		let reply;
+		try {
+			const [res] = await Promise.all([
+				fetch("/api/buzz", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ bee: bee.id, transcript: transcript.slice(-24) }) }),
+				sleep(350 + Math.random() * 450),
+			]);
+			const data = await res.json().catch(() => ({}));
+			if (!res.ok) throw new Error(data.error || "the hive is unreachable");
+			reply = data.text || "";
+		} catch (err) {
+			if (myRound !== round) return;
+			row.remove();
+			note(err.message || "the hive is unreachable");
+			break;
+		}
+		if (myRound !== round) { row.remove(); return; }
+		row.classList.remove("typing");
+		if (!reply) {
+			row.remove();
+			note(`${bee.name} stays silent`);
+		} else {
+			transcript.push({ who: bee.id, text: reply });
+			save();
+			const rest = fillBee(row, bee, reply);
+			await typeOut(row.querySelector(".text"), rest, myRound);
+		}
+		spoken.add(bee.id);
+		last = bee.id;
+		renderRoster();
+		await sleep(250 + Math.random() * 500);
+	}
+	if (myRound === round) { renderRoster(); note("the swarm settles"); }
+}
+
+$("form").addEventListener("submit", (ev) => {
+	ev.preventDefault();
+	const said = input.value.trim().slice(0, 300);
+	if (!said) return;
+	input.value = "";
+	if (!transcript.length) log.innerHTML = "";
+	const entry = { who: "you", text: said };
+	transcript.push(entry);
+	save();
+	log.querySelectorAll(".typing").forEach((r) => r.remove());
+	addEntry(entry);
+	scroll();
+	swarm(said, ++round);
+});
+
+$("chips").innerHTML = SUGGESTIONS.map((s) => `<button type="button">${escape(s)}</button>`).join("");
+$("chips").addEventListener("click", (ev) => {
+	const b = ev.target.closest("button");
+	if (!b) return;
+	input.value = b.textContent;
+	$("form").requestSubmit();
+});
+$("clear").addEventListener("click", () => {
+	round++;
+	transcript = [];
+	save();
+	renderAll();
+	input.focus();
+});
+
+renderAll();
+</script>
+</body>
+</html>

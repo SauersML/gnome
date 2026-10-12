@@ -1,0 +1,20 @@
+{
+	"name": "bee-swarm",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-10-08",
+	"workers_dev": false,
+	"routes": [{ "pattern": "bee.gnome.science", "custom_domain": true }],
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS"
+	},
+	"build": {
+		"command": "node scripts/fetch-bee.mjs swarm/public BeeLLM-12M-Mood BeeLLM-1M-Mood BeeLLM-1M-Mood-Chaos BeeLLM-42P-Chaos BeeLLM-42P BeeLLM-30P"
+	},
+	"ratelimits": [
+		{ "name": "BUZZ_LIMIT", "namespace_id": "4207", "simple": { "limit": 90, "period": 60 } }
+	],
+	"observability": {
+		"enabled": false
+	}
+}

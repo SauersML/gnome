@@ -1,30 +1,44 @@
-// Downloads the pinned BeeLLM 12M Mood weights, verifies them, and writes them to
-// public/bee/ in parts below the 25 MiB static-asset limit. Skips work when present.
+// Downloads pinned BeeLLM weights, verifies them, and writes each model to <dir>/bee/ as
+// parts below the 25 MiB static-asset limit plus <file>.json describing the parts.
+// Usage: node scripts/fetch-bee.mjs <public dir, relative to the repo root> <model>...
+// Models already present with the pinned hash are skipped.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const REVISION = "62fc7082eebc184cc5177a67107318196aee69f7";
-const FILE = "BeeLLM-12M-Mood.gguf";
-const SHA256 = "32d5e894913620beab6b7eda374598a538285217b893ce5f3c7c21d1ef98879b";
-const BYTES = 47913376;
+const PINS = {
+	"BeeLLM-12M-Mood": { bytes: 47913376, sha256: "32d5e894913620beab6b7eda374598a538285217b893ce5f3c7c21d1ef98879b" },
+	"BeeLLM-1M-Mood": { bytes: 4486784, sha256: "14fec85f15fdfcd1a2f139f97a8eb7c65d2728985993b8dc4716235da492de52" },
+	"BeeLLM-1M-Mood-Chaos": { bytes: 4486848, sha256: "d335a9010bfd1a3de193e5c349844a5af364f7906b439d79f414d0ebef7888f6" },
+	"BeeLLM-42P-Chaos": { bytes: 102784, sha256: "6176e9caecf0744be9854f5c6b94d2542a02a750384367fcc293ac443ce4726d" },
+	"BeeLLM-42P": { bytes: 50080, sha256: "3bf2fb647a11c54cdb53588eee581acbd9f3aa083d2f921918d812fc602168c1" },
+	"BeeLLM-30P": { bytes: 49504, sha256: "e5987a9ac3f66281bf60d886f280db1e5adc04bd8a89468232f6692a16e70bf8" },
+};
 const PART_BYTES = 24 * 1024 * 1024;
-const DIR = new URL("../public/bee/", import.meta.url);
 
-const manifestPath = new URL("manifest.json", DIR);
-if (existsSync(manifestPath) && JSON.parse(readFileSync(manifestPath, "utf8")).sha256 === SHA256) process.exit(0);
-
-const url = `https://huggingface.co/schizophyllume/BeeLLM/resolve/${REVISION}/${FILE}`;
-const res = await fetch(url);
-if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
-const data = Buffer.from(await res.arrayBuffer());
-const sha256 = createHash("sha256").update(data).digest("hex");
-if (data.length !== BYTES || sha256 !== SHA256) throw new Error(`${FILE}: got ${data.length} bytes, sha256 ${sha256}`);
-
-mkdirSync(DIR, { recursive: true });
-const parts = [];
-for (let i = 0; i * PART_BYTES < data.length; i++) {
-	parts.push(`${FILE}.part${i}`);
-	writeFileSync(new URL(parts[i], DIR), data.subarray(i * PART_BYTES, (i + 1) * PART_BYTES));
+const [dir, ...models] = process.argv.slice(2);
+if (!dir || models.length === 0 || models.some((m) => !PINS[m])) {
+	throw new Error(`usage: fetch-bee.mjs <dir> <${Object.keys(PINS).join("|")}>...`);
 }
-writeFileSync(manifestPath, JSON.stringify({ file: FILE, revision: REVISION, sha256, bytes: data.length, parts }));
-console.log(`fetched ${FILE} (${parts.length} parts)`);
+const out = new URL(`../${dir}/bee/`, import.meta.url);
+mkdirSync(out, { recursive: true });
+
+for (const model of models) {
+	const { bytes, sha256 } = PINS[model];
+	const file = `${model}.gguf`;
+	const manifestPath = new URL(`${file}.json`, out);
+	if (existsSync(manifestPath) && JSON.parse(readFileSync(manifestPath, "utf8")).sha256 === sha256) continue;
+	const url = `https://huggingface.co/schizophyllume/BeeLLM/resolve/${REVISION}/${file}`;
+	const res = await fetch(url);
+	if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+	const data = Buffer.from(await res.arrayBuffer());
+	const got = createHash("sha256").update(data).digest("hex");
+	if (data.length !== bytes || got !== sha256) throw new Error(`${file}: got ${data.length} bytes, sha256 ${got}`);
+	const parts = [];
+	for (let i = 0; i * PART_BYTES < data.length; i++) {
+		parts.push(`${file}.part${i}`);
+		writeFileSync(new URL(parts[i], out), data.subarray(i * PART_BYTES, (i + 1) * PART_BYTES));
+	}
+	writeFileSync(manifestPath, JSON.stringify({ file, revision: REVISION, sha256, bytes, parts }));
+	console.log(`fetched ${file} (${parts.length} part${parts.length > 1 ? "s" : ""}) into ${dir}/bee/`);
+}

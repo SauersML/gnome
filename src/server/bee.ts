@@ -1,6 +1,7 @@
-// BeeLLM 12M Mood (https://huggingface.co/schizophyllume/BeeLLM) run directly in the
-// Worker: a GGUF reader, llama.cpp's SPM tokenizer, the llama forward pass in F32, and
-// llama-server's default sampler chain. No other model is ever substituted.
+// BeeLLM (https://huggingface.co/schizophyllume/BeeLLM) run directly in the Worker: a GGUF
+// reader, llama.cpp's SPM tokenizer, the llama forward pass in F32, and llama-server's
+// default sampler chain. The Mood bees chat through <|user|>/<|bee|> turns; the tiny bees
+// (30P, 42P, 42P Chaos) have no chat template and continue raw buzzing.
 
 export type BeeTurn = { role: "user" | "bee"; content: string };
 
@@ -117,6 +118,10 @@ export class BeeModel {
 	readonly eos: number;
 	readonly userToken: number;
 	readonly beeToken: number;
+	// Whether the model has the <|user|>/<|bee|> chat template (the Mood bees).
+	readonly chat: boolean;
+	// llama.cpp's SPM default is a leading space on each text fragment unless the GGUF says otherwise.
+	readonly addSpacePrefix: boolean;
 	private readonly tokens: string[];
 	private readonly tokenTypes: number[];
 	private readonly mergeable = new Map<string, { id: number; score: number }>();
@@ -135,7 +140,6 @@ export class BeeModel {
 		const { meta, tensors } = readGguf(buffer);
 		if (meta.get("general.architecture") !== "llama") throw new Error("Expected a llama GGUF");
 		if (meta.get("tokenizer.ggml.model") !== "llama") throw new Error("Expected an SPM (llama) tokenizer");
-		if (meta.get("tokenizer.ggml.add_space_prefix") !== false) throw new Error("Expected add_space_prefix = false");
 		const num = (key: string) => meta.get(key) as number;
 		this.nEmbd = num("llama.embedding_length");
 		this.nLayer = num("llama.block_count");
@@ -146,6 +150,7 @@ export class BeeModel {
 		if ((meta.get("llama.rope.dimension_count") ?? headDim) !== headDim) throw new Error("Partial rotary embedding is not supported");
 		this.eps = num("llama.attention.layer_norm_rms_epsilon");
 		this.ropeBase = (meta.get("llama.rope.freq_base") as number | undefined) ?? 10000;
+		this.addSpacePrefix = (meta.get("tokenizer.ggml.add_space_prefix") as boolean | undefined) ?? true;
 		this.bos = num("tokenizer.ggml.bos_token_id");
 		this.eos = num("tokenizer.ggml.eos_token_id");
 		this.tokens = meta.get("tokenizer.ggml.tokens") as string[];
@@ -160,7 +165,8 @@ export class BeeModel {
 		}
 		this.userToken = this.tokens.indexOf("<|user|>");
 		this.beeToken = this.tokens.indexOf("<|bee|>");
-		if (this.userToken < 0 || this.beeToken < 0 || this.byteTokens.length !== 256) throw new Error("Missing BeeLLM chat tokens");
+		this.chat = this.userToken >= 0 && this.beeToken >= 0;
+		if (this.byteTokens.filter((id) => id !== undefined).length !== 256) throw new Error("Missing byte-fallback tokens");
 
 		const f32 = (name: string, ...dims: number[]) => {
 			const t = tensors.get(name);
@@ -201,7 +207,7 @@ export class BeeModel {
 	// llama.cpp's SPM tokenizer (llm_tokenizer_spm_session) on one raw-text fragment.
 	tokenize(text: string): number[] {
 		if (!text) return [];
-		const chars = Array.from(text.replace(/ /g, "▁"));
+		const chars = Array.from((this.addSpacePrefix ? " " + text : text).replace(/ /g, "▁"));
 		const sym = chars.map((c, i) => ({ text: c, prev: i - 1, next: i + 1 < chars.length ? i + 1 : -1, live: true }));
 		type Bigram = { left: number; right: number; score: number; text: string };
 		const heap: Bigram[] = [];
@@ -273,15 +279,16 @@ export class BeeModel {
 
 	// The GGUF chat template: <s> then <|user|>text and <|bee|>text</s> turns, ending with <|bee|>.
 	// Oldest turns are dropped until the prompt fits.
-	promptTokens(turns: BeeTurn[]): number[] {
+	promptTokens(turns: BeeTurn[], maxTokens = MAX_PROMPT_TOKENS): number[] {
+		if (!this.chat) throw new Error("This bee has no chat template");
 		const encoded = turns.map((t) => t.role === "user"
 			? [this.userToken, ...this.tokenize(t.content)]
 			: [this.beeToken, ...this.tokenize(t.content), this.eos]);
 		let start = 0;
 		const total = () => 2 + encoded.slice(start).reduce((n, e) => n + e.length, 0);
-		while (start < encoded.length - 1 && total() > MAX_PROMPT_TOKENS) start++;
+		while (start < encoded.length - 1 && total() > maxTokens) start++;
 		const ids = [this.bos, ...encoded.slice(start).flat(), this.beeToken];
-		return ids.length > MAX_PROMPT_TOKENS ? [this.bos, ...ids.slice(ids.length - MAX_PROMPT_TOKENS + 1)] : ids;
+		return ids.length > maxTokens ? [this.bos, ...ids.slice(ids.length - maxTokens + 1)] : ids;
 	}
 
 	// Runs tokens at positions pos0.. through the model, filling the KV cache.
@@ -376,16 +383,25 @@ export class BeeModel {
 		return kept[kept.length - 1];
 	}
 
-	reply(turns: BeeTurn[], random: () => number = Math.random): string {
-		const prompt = this.promptTokens(turns);
+	private generate(prompt: number[], maxTokens: number, random: () => number): string {
 		let logits = this.forward(prompt, 0);
 		const out: number[] = [];
-		for (let pos = prompt.length; out.length < MAX_REPLY_TOKENS; pos++) {
+		for (let pos = prompt.length; out.length < maxTokens; pos++) {
 			const id = this.sample(logits, random);
 			if (id === this.eos || this.tokenTypes[id] === TOKEN_CONTROL) break;
 			out.push(id);
 			logits = this.forward([id], pos);
 		}
 		return this.detokenize(out).trim();
+	}
+
+	reply(turns: BeeTurn[], random: () => number = Math.random, maxPromptTokens = MAX_PROMPT_TOKENS): string {
+		return this.generate(this.promptTokens(turns, maxPromptTokens), MAX_REPLY_TOKENS, random);
+	}
+
+	// For bees without a chat template: continue <s> + text, as llama.cpp's /completion does.
+	continueText(text: string, maxTokens: number, random: () => number = Math.random, maxPromptTokens = 128): string {
+		const ids = this.tokenize(text);
+		return this.generate([this.bos, ...ids.slice(-(maxPromptTokens - 1))], maxTokens, random);
 	}
 }
