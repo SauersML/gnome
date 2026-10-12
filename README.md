@@ -20,6 +20,14 @@ Explicit mentions select exactly one model. Claude uses
 `OPENROUTER_API_KEY`. Cogito uses Deep Cogito's own website and its model ID
 `drishanarora/cogito-v2-1-671b`. There is no model fallback.
 
+The bee is [BeeLLM 12M Mood](https://huggingface.co/schizophyllume/BeeLLM), run
+inside the Worker by the `BeeHive` Durable Object (`src/server/bee.ts`: GGUF reader,
+llama.cpp's SPM tokenizer, llama forward pass, llama-server's default sampler). She
+answers to `bee`, `@bee` and her name, Scintilla, and sees only messages that name
+her plus her own replies. The build runs `scripts/fetch-bee.mjs`, which downloads the
+pinned GGUF, checks its SHA-256, and splits it into `public/bee/` (ignored by git).
+`tests/bee.test.mjs` compares tokens and next-token probabilities with llama.cpp.
+
 Deep Cogito's Vercel check rejects requests from Cloudflare, including its managed
 browser. A background Chrome bridge on the deployment Mac calls
 `https://chat.deepcogito.com/api/cogito` from a fresh browser page. It uses no user

@@ -10,6 +10,10 @@
 		{
 			"new_sqlite_classes": ["CogitoRelay"],
 			"tag": "v2"
+		},
+		{
+			"new_sqlite_classes": ["BeeHive"],
+			"tag": "v3"
 		}
 	],
 	"assets": {
@@ -19,7 +23,7 @@
 		"not_found_handling": "single-page-application"
 	},
 	"build": {
-		"command": "esbuild src/client/index.tsx --bundle --splitting --format=esm --platform=browser --outdir=public/dist"
+		"command": "node scripts/fetch-bee.mjs && esbuild src/client/index.tsx --bundle --splitting --format=esm --platform=browser --outdir=public/dist"
 	},
 	"durable_objects": {
 		"bindings": [
@@ -30,6 +34,10 @@
 			{
 				"class_name": "CogitoRelay",
 				"name": "COGITO_RELAY"
+			},
+			{
+				"class_name": "BeeHive",
+				"name": "BEE"
 			}
 		]
 	},

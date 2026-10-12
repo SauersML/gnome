@@ -369,7 +369,7 @@ function ChatView({ onBack }: { onBack: () => void }) {
 
 						{typingUsers.size > 0 && (() => {
 							const users = [...typingUsers];
-							const bots = users.filter((u) => ["Claude", "Kimi K2.5", "Cogito v2.1"].includes(u));
+							const bots = users.filter((u) => ["Claude", "Kimi K2.5", "Cogito v2.1", "Bee"].includes(u));
 							const humans = users.filter((u) => !bots.includes(u));
 							const parts: string[] = [];
 							if (humans.length > 0) parts.push(`${humans.join(", ")} ${humans.length === 1 ? "is typing" : "are typing"}`);

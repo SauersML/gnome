@@ -33,6 +33,7 @@
 	},
 	"private": true,
 	"scripts": {
+		"pretest": "node scripts/fetch-bee.mjs",
 		"test": "node --test tests/*.test.mjs",
 		"cf-typegen": "wrangler types ./src/server/worker-configuration.d.ts",
 		"check": "tsc --project src/client && tsc --project src/server && wrangler deploy --dry-run",

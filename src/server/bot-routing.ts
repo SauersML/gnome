@@ -3,15 +3,20 @@ export const KIMI_MODEL = "moonshotai/kimi-k2.5";
 // This is the model identifier used by Deep Cogito's own chat client.
 export const COGITO_MODEL = "drishanarora/cogito-v2-1-671b";
 
-export type Bot = "claude" | "kimi" | "cogito";
+// BeeLLM answers to "bee" and to her name, Scintilla.
+export const BEE_NAMES = /\b(?:bee|scintilla|beellm)\b/i;
+
+export type Bot = "claude" | "kimi" | "cogito" | "bee";
 
 export function selectBot(content: string, random = Math.random): Bot | null {
 	// A direct mention takes precedence over incidental names and random replies.
-	const mention = content.match(/(?:^|\s)@(claude|kimi|k2\.?5|cogito)\b/i)?.[1].toLowerCase();
-	if (mention) return mention === "claude" || mention === "cogito" ? mention : "kimi";
+	const mention = content.match(/(?:^|\s)@(claude|kimi|k2\.?5|cogito|bee|scintilla|beellm)\b/i)?.[1].toLowerCase();
+	if (mention) return mention === "claude" || mention === "cogito" ? mention
+		: mention === "bee" || mention === "scintilla" || mention === "beellm" ? "bee" : "kimi";
 	if (/\bclaude\b/i.test(content)) return "claude";
 	if (/\bkimi\b|\bk2\.?5\b/i.test(content)) return "kimi";
 	if (/\bcogito\b/i.test(content)) return "cogito";
+	if (BEE_NAMES.test(content)) return "bee";
 	// Keep unsolicited replies infrequent; Cogito remains available by mention.
 	return random() < 0.1 ? "claude" : null;
 }

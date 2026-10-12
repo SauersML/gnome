@@ -6,9 +6,11 @@ import {
 } from "partyserver";
 
 import type { ChatMessage, Message, Page } from "../shared";
-import { CLAUDE_MODEL, KIMI_MODEL, COGITO_MODEL, modelIdentity, selectBot } from "./bot-routing";
+import { BEE_NAMES, CLAUDE_MODEL, KIMI_MODEL, COGITO_MODEL, modelIdentity, selectBot } from "./bot-routing";
 import { requestCogito } from "./cogito";
+import type { BeeTurn } from "./bee";
 export { CogitoRelay } from "./cogito";
+export { BeeHive } from "./bee-hive";
 
 const CSS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -25,6 +27,24 @@ const PER_CONN_LLM_MAX = 3;
 
 // Max user message length sent to LLM context
 const MAX_MSG_LENGTH = 500;
+
+// The bee runs in the Worker (no provider cost), so she has her own limit instead of the LLM budget.
+const BEE_NAME = "Bee";
+const BEE_RATE_LIMIT_MAX = 20;
+const BEE_CONTEXT_MESSAGES = 40;
+
+// Her conversation is the messages addressed to her and her replies, as the GGUF template expects.
+export function beeTurns(messages: ChatMessage[]): BeeTurn[] {
+	const turns: BeeTurn[] = [];
+	for (const m of messages.slice(-BEE_CONTEXT_MESSAGES)) {
+		if (m.role === "assistant" && m.user === BEE_NAME && m.id.startsWith("bot-") && !m.id.endsWith("-err")) {
+			turns.push({ role: "bee", content: m.content });
+		} else if (m.role === "user" && BEE_NAMES.test(m.content)) {
+			turns.push({ role: "user", content: m.content.replace(/@(?=(?:bee|scintilla|beellm)\b)/gi, "").slice(0, MAX_MSG_LENGTH) });
+		}
+	}
+	return turns;
+}
 
 interface KimiAction {
 	chat: string;
@@ -651,6 +671,7 @@ export class Chat extends Server<Env> {
 	customCss = "";
 	cssUpdatedAt = 0;
 	kimiCallTimestamps: number[] = [];
+	beeCallTimestamps: number[] = [];
 	dailyCalls = 0;
 	dailyCallDate = "";
 
@@ -1059,6 +1080,36 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 		}
 	}
 
+	async sendBeeReply() {
+		const now = Date.now();
+		this.beeCallTimestamps = this.beeCallTimestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+		if (this.beeCallTimestamps.length >= BEE_RATE_LIMIT_MAX) return;
+		this.beeCallTimestamps.push(now);
+
+		const msgId = `bot-${now}-${Math.random().toString(36).slice(2, 6)}`;
+		this.broadcastMessage({ type: "typing", user: BEE_NAME, isTyping: true });
+		try {
+			const reply = await this.env.BEE.getByName("bee").reply(beeTurns(this.messages));
+			this.broadcastMessage({ type: "typing", user: BEE_NAME, isTyping: false });
+			// An empty reply is the bee choosing silence (e.g. when shut in a jar), not an error.
+			if (!reply) return;
+			const msg: ChatMessage = { id: msgId, content: reply, user: BEE_NAME, role: "assistant" };
+			this.saveMessage(msg);
+			this.broadcastMessage({ type: "add", ...msg });
+		} catch (e) {
+			this.broadcastMessage({ type: "typing", user: BEE_NAME, isTyping: false });
+			console.error(BEE_NAME, "failed:", e instanceof Error ? e.message : String(e));
+			const errChat: ChatMessage = {
+				id: `${msgId}-err`,
+				content: `${BEE_NAME} couldn't respond right now. Please try again later.`,
+				user: BEE_NAME,
+				role: "assistant",
+			};
+			this.saveMessage(errChat);
+			this.broadcastMessage({ type: "add", ...errChat });
+		}
+	}
+
 	async onMessage(connection: Connection, message: WSMessage) {
 		// Per-connection rate limit: 30 messages per 10 seconds
 		const now = Date.now();
@@ -1114,7 +1165,9 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 
 		const bot = selectBot(parsed.content);
 		if (!bot || this.isConnectionLLMRateLimited(connection)) return;
-		if (bot === "kimi") {
+		if (bot === "bee") {
+			await this.sendBeeReply();
+		} else if (bot === "kimi") {
 			await this.sendBotReply("Kimi K2.5", KIMI_MODEL, buildSystemPrompt(this.customCss, this.pages));
 		} else if (bot === "cogito") {
 			await this.sendBotReply("Cogito v2.1", COGITO_MODEL, `You are chatting at gnome.science.\n${TOOL_DOCS}`, 1024, 10);

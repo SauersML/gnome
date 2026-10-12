@@ -147,3 +147,46 @@ test('historical generated errors are redacted on reconnect without changing sav
   assert.doesNotMatch(JSON.stringify(sent), /OpenRouter|private-user-id/);
   assert.equal(chat.messages[0].content, oldError);
 });
+
+test('the bee answers to bee, @bee and her name, not to words that merely contain them', () => {
+  for (const text of ['hi bee!', '@bee hello', '@Scintilla hi', 'are you scintilla', 'BeeLLM?']) assert.equal(selectBot(text, () => 0.5), 'bee', text);
+  for (const text of ['beekeeping is fun', 'to be or not to be', 'bees']) assert.equal(selectBot(text, () => 0.5), null, text);
+  assert.equal(selectBot('@claude what does the bee think?', () => 0.5), 'claude');
+});
+
+test('the bee gets only her own conversation, without @, and never touches the LLM budget', async t => {
+  const chat = new Chat();
+  chat.moderateWithHaiku = async () => true;
+  chat.messages = [
+    { id: 'a', role: 'user', user: 'visitor', content: 'hi bee!' },
+    { id: 'bot-1', role: 'assistant', user: 'Bee', content: '[neutral:low] buzz' },
+    { id: 'b', role: 'user', user: 'visitor', content: 'unrelated chatter' },
+    { id: 'bot-2', role: 'assistant', user: 'Claude', content: 'Hello.' },
+    { id: 'c', role: 'user', user: 'Bee', content: 'a human who chose that username' },
+    { id: 'bot-3-err', role: 'assistant', user: 'Bee', content: "Bee couldn't respond right now." },
+  ];
+  let turns;
+  chat.env.BEE = { getByName: name => (assert.equal(name, 'bee'), { reply: async t => (turns = t, '[happy:high] *hugs the flower*') }) };
+  t.mock.method(globalThis, 'fetch', async () => { throw new Error('the bee must not call a provider'); });
+  await chat.onMessage({ send() {} }, JSON.stringify({ type: 'add', id: 'd', user: 'visitor', role: 'user', content: '@scintilla *gives you a flower*' }));
+  assert.deepEqual(turns, [
+    { role: 'user', content: 'hi bee!' },
+    { role: 'bee', content: '[neutral:low] buzz' },
+    { role: 'user', content: 'scintilla *gives you a flower*' },
+  ]);
+  assert.equal(chat.messages.at(-1).user, 'Bee');
+  assert.equal(chat.messages.at(-1).content, '[happy:high] *hugs the flower*');
+  assert.equal(chat.dailyCalls, 0);
+});
+
+test('a silent bee posts nothing and a failed bee posts only the generic error', async () => {
+  const chat = new Chat();
+  chat.env.BEE = { getByName: () => ({ reply: async () => '' }) };
+  await chat.sendBeeReply();
+  assert.equal(chat.messages.length, 0);
+  assert.deepEqual(chat.events.at(-1), { type: 'typing', user: 'Bee', isTyping: false });
+  chat.env.BEE = { getByName: () => ({ reply: async () => { throw new Error('private stack detail'); } }) };
+  await chat.sendBeeReply();
+  assert.match(chat.messages.at(-1).content, /^Bee couldn't respond right now/);
+  assert.doesNotMatch(JSON.stringify(chat.events), /private stack detail/);
+});
