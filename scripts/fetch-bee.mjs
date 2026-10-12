@@ -16,7 +16,7 @@ const PINS = {
 	"BeeLLM-42P": { bytes: 50080, sha256: "3bf2fb647a11c54cdb53588eee581acbd9f3aa083d2f921918d812fc602168c1" },
 	"BeeLLM-30P": { bytes: 49504, sha256: "e5987a9ac3f66281bf60d886f280db1e5adc04bd8a89468232f6692a16e70bf8" },
 	// Mellifera: post-trained from BeeLLM-12M-Mood by train/ (vocabulary grown to 4,096 tokens).
-	"BeeLLM-13M-Mellifera": { bytes: 53197792, sha256: "32f9ac0bbad751f441c9bbb2ac74d6bc809d784ab1aab2d71732161de5a98865", local: true },
+	"BeeLLM-13M-Mellifera": { bytes: 53197792, sha256: "6721d87de45b010e663d110d788a43235709f7fed7809b9f73bbb5cea6519e86", local: true },
 };
 const PART_BYTES = 24 * 1024 * 1024;
 

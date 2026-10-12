@@ -61,7 +61,7 @@ const MELLIFERA_TOKENS = {
   'émoji 🐝 and commas, ok': [200, 174, 2272, 2044, 1999, 1989, 245, 164, 149, 162, 429, 1164, 3265, 2140, 1345],
 };
 const MELLIFERA_CHAT_IDS = [1, 3, 2378, 271, 1991, 4, 2098, 267, 301, 293, 1991, 327, 282, 339, 2, 3, 983, 4];
-const MELLIFERA_TOP_LOGPROBS = [[2081, -0.00369], [2088, -5.95581], [2076, -8.54672], [2214, -9.41334], [2022, -9.9825]];
+const MELLIFERA_TOP_LOGPROBS = [[2081, -0.00261], [2088, -6.42712], [2076, -8.66321], [2214, -9.74014], [2022, -10.04042]];
 
 test('Mellifera tokenizes and predicts as llama.cpp does', () => {
   const m = JSON.parse(readFileSync(new URL('../town/public/bee/BeeLLM-13M-Mellifera.gguf.json', import.meta.url), 'utf8'));
