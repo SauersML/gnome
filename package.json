@@ -40,6 +40,7 @@
 		"deploy": "wrangler deploy",
 		"deploy:swarm": "wrangler deploy --config swarm/wrangler.json",
 		"dev:swarm": "wrangler dev --config swarm/wrangler.json",
+		"deploy:town": "wrangler deploy --config town/wrangler.json",
 		"dev": "wrangler dev"
 	}
 }

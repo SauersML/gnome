@@ -1,0 +1,23 @@
+{
+	"name": "bee-town",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-10-08",
+	"workers_dev": false,
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS"
+	},
+	"build": {
+		"command": "node scripts/fetch-bee.mjs town/public BeeLLM-12M-Mood"
+	},
+	"triggers": {
+		"crons": ["* * * * *"]
+	},
+	"durable_objects": {
+		"bindings": [{ "class_name": "BeeAgent", "name": "AGENT" }]
+	},
+	"migrations": [{ "new_sqlite_classes": ["BeeAgent"], "tag": "v1" }],
+	"observability": {
+		"enabled": true
+	}
+}

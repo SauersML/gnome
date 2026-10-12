@@ -201,3 +201,4 @@ dist
 ### BeeLLM weights (scripts/fetch-bee.mjs) ###
 public/bee/
 swarm/public/bee/
+town/public/

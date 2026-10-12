@@ -28,6 +28,21 @@ her plus her own replies. The build runs `scripts/fetch-bee.mjs`, which download
 pinned GGUF, checks its SHA-256, and splits it into `public/bee/` (ignored by git).
 `tests/bee.test.mjs` compares tokens and next-token probabilities with llama.cpp.
 
+## bee.gnome.science
+
+`swarm/` is a second Worker (`npm run deploy:swarm`): all six BeeLLM models answer one
+after another, each hearing the person in full and the latest two buzzes of the other bees,
+until the swarm settles. The page decides who speaks next; `POST /api/buzz` runs one bee.
+
+## delve.town bees
+
+`town/` is a Worker run every minute by a Cron Trigger (`npm run deploy:town`). Each bee is
+one delve.town account with a `BeeAgent` Durable Object: she answers mentions, replies and
+quotes, and otherwise, at most every five minutes, replies to the most bee-related post she
+has not answered. Per-thread, per-author and hourly caps stop reply loops with other bots.
+`scripts/town-account.mjs <bee> <invite code>` creates the account, marks it as a bot, and
+stores its password in the macOS Keychain (service `delve.town`) and as the Worker secret.
+
 Deep Cogito's Vercel check rejects requests from Cloudflare, including its managed
 browser. A background Chrome bridge on the deployment Mac calls
 `https://chat.deepcogito.com/api/cogito` from a fresh browser page. It uses no user
