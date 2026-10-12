@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import type { BeeModel, BeeTurn } from "../../src/server/bee";
+import type { BeeModel, BeeTurn, Sampling } from "../../src/server/bee";
 import { MAX_REPLY_TOKENS } from "../../src/server/bee";
 import { loadBee } from "../../src/server/bee-assets";
 import {
@@ -8,7 +8,8 @@ import {
 	allowedToSpeak, cleanForBee, cosine, meanVector, mentionPost, postText, rankAmbient, replyRef, threadTurns, withMemory,
 } from "./town";
 
-export type TownBee = { id: string; name: string; handle: string; file: string; passwordSecret: string };
+// sampling and candidates (replies sampled per prompt, the most fluent kept) suit each model.
+export type TownBee = { id: string; name: string; handle: string; file: string; passwordSecret: string; sampling: Sampling; candidates: number };
 type Session = { did: string; handle: string; accessJwt: string; refreshJwt: string };
 
 const PDS = "https://pds.delve.town";
@@ -120,9 +121,9 @@ export class BeeAgent extends DurableObject<Env> {
 
 	// Generates her reply to a conversation, preceded by her memory of everything else.
 	private async buzz(bee: TownBee, root: string, turns: BeeTurn[]): Promise<string> {
-		this.model ??= loadBee(this.env.ASSETS, bee.file, CONTEXT_TOKENS + MAX_REPLY_TOKENS);
+		this.model ??= loadBee(this.env.ASSETS, bee.file, CONTEXT_TOKENS + MAX_REPLY_TOKENS, bee.sampling);
 		this.model.catch(() => { this.model = null; });
-		return postText((await this.model).reply(withMemory(this.memory(), root, turns), Math.random, CONTEXT_TOKENS));
+		return postText((await this.model).reply(withMemory(this.memory(), root, turns), Math.random, CONTEXT_TOKENS, bee.candidates));
 	}
 
 	private async createPost(s: Session, record: Record<string, unknown>) {

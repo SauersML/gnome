@@ -1,12 +1,13 @@
 // Bee agents on delve.town, run every minute by a Cron Trigger. Each bee is one account with
 // her own Durable Object, model and password secret. More bees are added to BEES as invite
 // codes allow, largest first.
+import { LLAMA_SERVER_SAMPLING } from "../../src/server/bee";
 import { BeeAgent, type TownBee } from "./agent";
 
 export { BeeAgent };
 
 const BEES: TownBee[] = [
-	{ id: "scintilla", name: "bee", handle: "bee.delve.town", file: "BeeLLM-12M-Mood.gguf", passwordSecret: "SCINTILLA_PASSWORD" },
+	{ id: "scintilla", name: "bee", handle: "bee.delve.town", file: "BeeLLM-12M-Mood.gguf", passwordSecret: "SCINTILLA_PASSWORD", sampling: LLAMA_SERVER_SAMPLING, candidates: 1 },
 ];
 
 export default {
