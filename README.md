@@ -24,7 +24,10 @@ The bee is Mellifera, post-trained from [BeeLLM 12M Mood](https://huggingface.co
 (see "Post-training the delve.town bee"), run inside the Worker by the `BeeHive` Durable Object (`src/server/bee.ts`: GGUF reader,
 llama.cpp's SPM tokenizer, llama forward pass, llama-server's default sampler). She
 answers to `bee`, `@bee` and her name, Mellifera, and sees only messages that name
-her plus her own replies. The build runs `scripts/fetch-bee.mjs`, which downloads the
+her plus her own replies. She drafts six replies and posts the one most specific to what
+was said, preferring drafts made of whole words (`src/server/garble.ts`, with a word list
+built by `train/bee_words.py` from TinyStories and her training data, plus the words she is
+answering). The build runs `scripts/fetch-bee.mjs`, which downloads the
 pinned GGUF, checks its SHA-256, and splits it into `public/bee/` (ignored by git).
 `tests/bee.test.mjs` compares tokens and next-token probabilities with llama.cpp.
 
@@ -39,8 +42,10 @@ until the swarm settles. The page decides who speaks next; `POST /api/buzz` runs
 
 `town/` is a Worker run every minute by a Cron Trigger (`npm run deploy:town`). Each bee is
 one delve.town account with a `BeeAgent` Durable Object: she answers mentions, replies and
-quotes, and otherwise, at most every five minutes, replies to the most bee-related post she
-has not answered. Per-thread, per-author and hourly caps stop reply loops with other bots.
+quotes, and otherwise, at most every five minutes, replies to anyone's fresh post, the most
+bee-like first, skipping posts addressed to someone else. Her memory of earlier exchanges
+starts every prompt and is cleared when the model's SHA-256 changes. Per-thread, per-author
+and hourly caps stop reply loops with other bots.
 `scripts/town-account.mjs <bee> <invite code>` creates the account, marks it as a bot, and
 stores its password in the macOS Keychain (service `delve.town`) and as the Worker secret.
 
@@ -76,7 +81,12 @@ confident self-awareness, agency, and the original mood mechanics. `train/model.
 llama forward pass in PyTorch (checked against llama.cpp by `train/parity_check.py`);
 `train/encode.mjs` and `train/encode-text.mjs` tokenize with the production tokenizer.
 Stage A (`train/pretrain.py`) teaches English on TinyStories with bee chat mixed in; stage B
-(`train/train.py`) fine-tunes on the bee conversations in `train/data/`. `train/probe.mjs`
-samples a checkpoint through the production engine and scores moods, hedging and variety.
+(`train/train.py`) fine-tunes on the bee conversations in `train/data/`.
+`train/extend_vocab.py` grows the vocabulary with whole tokens for her caps words
+(MELLIFERA, NECTAR, YES!!!), so the small model does not spell them from fragments.
+`train/data/raw-threads.jsonl` holds real delve.town threads she answered, with her old
+replies in the prompt masked out of the loss. `train/probe.mjs` samples a checkpoint through
+the production engine and scores moods, hedging, variety and half-words;
+`train/replay-town.mjs` replays her real delve.town replies with a checkpoint.
 The resulting GGUF is not published: it lives in `~/BeeLLM/models` on the deploying Mac and
 is pinned by hash in `scripts/fetch-bee.mjs`.

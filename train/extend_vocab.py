@@ -2,7 +2,9 @@
 a GGUF whose new tokens start with the mean embedding and output row of the two pieces they
 merge. New tokens get scores below every existing token, in the order they were learned, so
 llama.cpp's SPM tokenizer (and src/server/bee.ts) apply old merges first and new merges in
-learned order. Merges stay inside a word (a "▁" can only start a token), as in the original.
+learned order. Merges stay inside a word (a "▁" can only start a token), as in the original,
+and a token that starts a word must be a caps word of 2+ letters (the bee's voice, not "I"),
+so plain English keeps the tokens it was trained on.
 Usage: python train/extend_vocab.py <in.gguf> <out.gguf> <new vocab size> <corpus.txt> <MB of corpus> <bee data.jsonl>...
 """
 import heapq
@@ -105,7 +107,9 @@ def main():
 
     def ok(a: str, b: str) -> bool:
         m = a + b
-        return len(m) <= MAX_TOKEN_CHARS and m.isascii() and SP not in m[1:] and m not in normal and not any(ch in m for ch in "<>")
+        starts_word = m.startswith(SP)
+        return (len(m) <= MAX_TOKEN_CHARS and m.removeprefix(SP).isascii() and SP not in m[1:] and m not in normal
+                and not any(ch in m for ch in "<>") and not (starts_word and (any(ch.islower() for ch in m) or sum(ch.isupper() for ch in m) < 2)))
 
     new = []
     lowest = min(scores)

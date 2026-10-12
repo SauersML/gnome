@@ -7,10 +7,10 @@ import { BeeAgent, type TownBee } from "./agent";
 export { BeeAgent };
 
 const BEES: TownBee[] = [
-	// Mellifera (train/): two sampled replies, the one most specific to the post is posted.
+	// Mellifera (train/): six sampled replies; the one most specific to the post, in whole words, is posted.
 	{
 		id: "mellifera", name: "bee", handle: "bee.delve.town", file: "BeeLLM-13M-Mellifera.gguf", passwordSecret: "BEE_PASSWORD",
-		sampling: { ...LLAMA_SERVER_SAMPLING, temperature: 0.85, firstTemperature: 0.3, loopLimit: 6 }, candidates: 2, relevance: 0.5,
+		sampling: { ...LLAMA_SERVER_SAMPLING, temperature: 0.85, firstTemperature: 0.3, loopLimit: 6 }, candidates: 6, relevance: 0.5,
 	},
 ];
 

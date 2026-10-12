@@ -54,20 +54,27 @@ export function meanVector(vectors: number[][]): number[] {
 	return vectors[0].map((_, i) => vectors.reduce((s, v) => s + v[i], 0) / vectors.length);
 }
 
+// The first or last MAX_HEARD_CHARS of a text, cut between words.
+function headWords(text: string): string {
+	return text.length <= MAX_HEARD_CHARS ? text : text.slice(0, MAX_HEARD_CHARS + 1).replace(/\s+\S*$/, "");
+}
+function tailWords(text: string): string {
+	return text.length <= MAX_HEARD_CHARS ? text : text.slice(-MAX_HEARD_CHARS - 1).replace(/^\S*\s+/, "");
+}
+
 // What a bee reads of a post: her own handle becomes her name, other handles and links go.
 export function cleanForBee(text: string, selfHandle: string, name: string): string {
-	return text
+	return headWords(text
 		.replaceAll(`@${selfHandle}`, name)
 		.replace(/@[a-z0-9.-]+\.[a-z]{2,}/gi, "")
 		.replace(/https?:\/\/\S+/g, "")
 		.replace(/\s+/g, " ")
-		.trim()
-		.slice(0, MAX_HEARD_CHARS);
+		.trim());
 }
 
 function pushTurn(turns: BeeTurn[], role: BeeTurn["role"], content: string) {
 	const last = turns.at(-1);
-	if (role === "user" && last?.role === "user") last.content = `${last.content} ${content}`.slice(-MAX_HEARD_CHARS);
+	if (role === "user" && last?.role === "user") last.content = tailWords(`${last.content} ${content}`);
 	else turns.push({ role, content });
 }
 
@@ -105,8 +112,9 @@ export function allowedToSpeak(spoken: Spoken[], now: number, root: string, auth
 export type Candidate = TownPost & { similarity: number; keywords: number; rank: number };
 
 // Posts she could answer unprompted, best first: anyone's fresh post that is not hers or
-// another bee's, not answered, and outside threads she spoke in recently, with the most
-// bee-like (by meaning, then words) first.
+// another bee's, not answered, not addressed to someone (a post opening with "@name" is for
+// them; posts addressed to her reach her as notifications), and outside threads she spoke in
+// recently, with the most bee-like (by meaning, then words) first.
 export function rankAmbient(posts: TownPost[], similarity: Map<string, number>, opts: { self: string; bees: Set<string>; handled: (uri: string) => boolean; spoken: Spoken[]; now: number }): Candidate[] {
 	const busyRoots = new Set(opts.spoken.filter((s) => opts.now - s.at < 6 * HOUR).map((s) => s.root));
 	const seen = new Set<string>();
@@ -115,7 +123,7 @@ export function rankAmbient(posts: TownPost[], similarity: Map<string, number>, 
 		if (seen.has(p.uri)) continue;
 		seen.add(p.uri);
 		const age = opts.now - Date.parse(p.createdAt);
-		if (p.authorDid === opts.self || opts.bees.has(p.handle) || opts.handled(p.uri)) continue;
+		if (p.authorDid === opts.self || opts.bees.has(p.handle) || opts.handled(p.uri) || /^\s*@[a-z0-9]/i.test(p.text)) continue;
 		if (!(age >= 0 && age < MAX_POST_AGE_MS) || busyRoots.has((p.root ?? p).uri)) continue;
 		const sim = similarity.get(p.uri) ?? 0;
 		const keywords = beeScore(p.text);

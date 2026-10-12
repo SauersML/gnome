@@ -1,20 +1,22 @@
 // The bee.gnome.science swarm: six BeeLLM models in one conversation. Each bee hears the
 // person in full and only the latest few buzzes of the other bees.
 import type { BeeTurn, Sampling } from "../../src/server/bee";
+import { garblePenalty } from "../../src/server/garble.ts";
 
 export type SwarmEntry = { who: string; text: string };
-// sampling, candidates and relevance are optional per bee (see BeeModel.reply).
-export type SwarmBee = { id: string; name: string; file: string; maxPromptTokens: number; sampling?: Partial<Sampling>; candidates?: number; relevance?: number };
+// sampling, candidates and relevance are optional per bee (see BeeModel.reply); wholeWords
+// prefers drafts without half-words (src/server/garble.ts).
+export type SwarmBee = { id: string; name: string; file: string; maxPromptTokens: number; sampling?: Partial<Sampling>; candidates?: number; relevance?: number; wholeWords?: boolean };
 type Speaker = {
 	chat: boolean;
-	reply(turns: BeeTurn[], random?: () => number, maxPromptTokens?: number, candidates?: number, relevance?: number): string;
+	reply(turns: BeeTurn[], random?: () => number, maxPromptTokens?: number, candidates?: number, relevance?: number, penalty?: (draft: string) => number): string;
 	continueText(text: string, maxTokens: number, random?: () => number): string;
 };
 
 export const PERSON = "you";
 export const SWARM: SwarmBee[] = [
 	// Mellifera (train/), the same bee as on delve.town and gnome.science.
-	{ id: "mellifera", name: "Mellifera", file: "BeeLLM-13M-Mellifera.gguf", maxPromptTokens: 256, sampling: { temperature: 0.85, firstTemperature: 0.3, loopLimit: 6 }, candidates: 2, relevance: 0.5 },
+	{ id: "mellifera", name: "Mellifera", file: "BeeLLM-13M-Mellifera.gguf", maxPromptTokens: 256, sampling: { temperature: 0.85, firstTemperature: 0.3, loopLimit: 6 }, candidates: 6, relevance: 0.5, wholeWords: true },
 	{ id: "melissa", name: "Melissa", file: "BeeLLM-1M-Mood.gguf", maxPromptTokens: 512 },
 	{ id: "bombus", name: "Bombus", file: "BeeLLM-1M-Mood-Chaos.gguf", maxPromptTokens: 512 },
 	{ id: "apis", name: "Apis", file: "BeeLLM-42P-Chaos.gguf", maxPromptTokens: 128 },
@@ -67,7 +69,10 @@ export function tinyPrompt(transcript: SwarmEntry[]): string {
 }
 
 export function speak(bee: SwarmBee, model: Speaker, transcript: SwarmEntry[], random: () => number = Math.random): string {
-	if (model.chat) return model.reply(moodTurns(bee.id, transcript), random, bee.maxPromptTokens, bee.candidates ?? 1, bee.relevance ?? 0);
+	if (model.chat) {
+		const turns = moodTurns(bee.id, transcript);
+		return model.reply(turns, random, bee.maxPromptTokens, bee.candidates ?? 1, bee.relevance ?? 0, bee.wholeWords ? garblePenalty(turns.at(-1)?.content ?? "") : undefined);
+	}
 	// A Mood bee's silence means something; a tiny bee that stops at once just tries again.
 	let text = "";
 	for (let attempt = 0; attempt < TINY_BEE_ATTEMPTS && !text; attempt++) text = model.continueText(tinyPrompt(transcript), TINY_BEE_TOKENS, random);

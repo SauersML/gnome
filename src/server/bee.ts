@@ -436,8 +436,9 @@ export class BeeModel {
 	// Samples `candidates` replies from one pass over the prompt and keeps the best: the most
 	// fluent (highest mean log-probability per token, the end of reply included), or, with
 	// `relevance` > 0, the one that much more likely after this prompt than after an empty one,
-	// which favours replies about what was actually said over replies that fit any post.
-	private generate(prompt: number[], maxTokens: number, random: () => number, candidates = 1, relevance = 0): string {
+	// which favours replies about what was actually said over replies that fit any post, less
+	// `penalty(text)` (Mellifera's: her share of half-words, src/server/garble.ts).
+	private generate(prompt: number[], maxTokens: number, random: () => number, candidates = 1, relevance = 0, penalty?: (text: string) => number): string {
 		const first = this.forward(prompt, 0);
 		const drafts: { ids: number[]; score: number }[] = [];
 		for (let c = 0; c < candidates; c++) {
@@ -462,12 +463,13 @@ export class BeeModel {
 		if (relevance > 0 && this.chat && candidates > 1) {
 			for (const d of drafts) d.score -= relevance * this.meanLogProb([this.bos, this.beeToken], d.ids);
 		}
+		if (penalty && candidates > 1) for (const d of drafts) d.score -= penalty(this.detokenize(d.ids));
 		const best = drafts.reduce((a, b) => (b.score > a.score ? b : a));
 		return this.detokenize(best.ids).trim();
 	}
 
-	reply(turns: BeeTurn[], random: () => number = Math.random, maxPromptTokens = MAX_PROMPT_TOKENS, candidates = 1, relevance = 0): string {
-		return this.generate(this.promptTokens(turns, maxPromptTokens), MAX_REPLY_TOKENS, random, candidates, relevance);
+	reply(turns: BeeTurn[], random: () => number = Math.random, maxPromptTokens = MAX_PROMPT_TOKENS, candidates = 1, relevance = 0, penalty?: (text: string) => number): string {
+		return this.generate(this.promptTokens(turns, maxPromptTokens), MAX_REPLY_TOKENS, random, candidates, relevance, penalty);
 	}
 
 	// For bees without a chat template: continue <s> + text, as llama.cpp's /completion does.

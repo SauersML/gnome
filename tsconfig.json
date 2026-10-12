@@ -5,6 +5,7 @@
 		"module": "esnext",
 		"moduleResolution": "bundler",
 		"noEmit": true,
+		"allowImportingTsExtensions": true,
 		"isolatedModules": true,
 		"forceConsistentCasingInFileNames": true,
 		"skipLibCheck": true,

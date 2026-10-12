@@ -1,10 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import { type BeeModel, type BeeTurn, LLAMA_SERVER_SAMPLING, MAX_PROMPT_TOKENS } from "./bee";
 import { loadBee } from "./bee-assets";
+import { garblePenalty } from "./garble.ts";
 
 // Holds the Mellifera weights (served as static assets by scripts/fetch-bee.mjs) in its own
-// object, so generating a reply never blocks the chat room. She samples two replies and posts
-// the one most specific to what was said.
+// object, so generating a reply never blocks the chat room. She samples six replies and posts
+// the one most specific to what was said, made of whole words.
 export class BeeHive extends DurableObject<Env> {
 	private model: Promise<BeeModel> | null = null;
 
@@ -15,6 +16,6 @@ export class BeeHive extends DurableObject<Env> {
 	}
 
 	async reply(turns: BeeTurn[]): Promise<string> {
-		return (await this.load()).reply(turns, Math.random, MAX_PROMPT_TOKENS, 2, 0.5);
+		return (await this.load()).reply(turns, Math.random, MAX_PROMPT_TOKENS, 6, 0.5, garblePenalty(turns.at(-1)?.content ?? ""));
 	}
 }

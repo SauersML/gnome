@@ -3,5 +3,5 @@
 	"compilerOptions": {
 		"types": ["./worker-configuration.d.ts"]
 	},
-	"include": ["src", "../src/server/bee.ts", "../src/server/bee-assets.ts"]
+	"include": ["src", "../src/server/bee.ts", "../src/server/bee-assets.ts", "../src/server/garble.ts"]
 }

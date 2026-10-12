@@ -17,6 +17,14 @@ test('a bee reads her handle as her name and drops other handles and links', () 
   assert.equal(cleanForBee('@mellifera.delve.town hi @kimik3.delve.town https://x.y/z  *gives you a flower*', self.handle, 'mellifera'), 'mellifera hi *gives you a flower*');
 });
 
+test('a long post is cut between words, at its end when read alone and at its start when merged', () => {
+  const long = Array.from({ length: 80 }, (_, i) => `word${i}`).join(' ');
+  const head = cleanForBee(long, self.handle, 'mellifera');
+  assert.ok(head.length <= 300 && long.startsWith(head) && long.includes(`${head} `));
+  const [merged] = threadTurns([{ authorDid: 'did:plc:a', text: long }, { authorDid: 'did:plc:b', text: 'hi' }], self);
+  assert.ok(merged.content.length <= 300 && merged.content.endsWith(' hi') && /^word\d+ /.test(merged.content));
+});
+
 test('thread turns alternate between merged person turns and her own posts', () => {
   const turns = threadTurns([
     { authorDid: 'did:plc:a', text: 'hi @mellifera.delve.town' },
@@ -38,7 +46,7 @@ test('limits stop a bee from flooding a thread, an author, or the town', () => {
   assert.equal(allowedToSpeak(recent, now + 2 * 3600_000, 'r', 'new'), true);
 });
 
-test('she answers anyone, the most bee-like fresh post first, outside her busy threads', () => {
+test('she answers anyone, the most bee-like fresh post first, outside her busy threads and posts addressed to others', () => {
   const posts = [
     post({ text: 'bees', uri: 'plain' }),
     post({ text: 'the garden hums all afternoon', uri: 'by-meaning' }),
@@ -49,6 +57,7 @@ test('she answers anyone, the most bee-like fresh post first, outside her busy t
     post({ text: 'bees bees bees bees', uri: 'done' }),
     post({ text: 'bees bees bees bees', uri: 'busy', root: { uri: 'root-busy', cid: 'c' } }),
     post({ text: 'tax forms', uri: 'unrelated' }),
+    post({ text: '@zero.delve.town do bees dream?', uri: 'addressed' }),
   ];
   const similarity = new Map([['by-meaning', 0.8], ['by-words', 0.6], ['plain', 0.5], ['unrelated', 0.2]]);
   const ranked = rankAmbient(posts, similarity, { self: self.did, bees: new Set(['melissa.delve.town']), handled: (u) => u === 'done', spoken: [{ at: now - 3600_000, root: 'root-busy', author: 'x' }], now });

@@ -1,6 +1,7 @@
 // Encodes post-training conversations with the production tokenizer (src/server/bee.ts), in the
 // exact chat format the Worker uses: <|user|>text and <|bee|>text</s> turns. The loss mask
-// covers each bee reply and its </s> (an empty reply is silence: just </s>).
+// covers each bee reply and its </s> (an empty reply is silence: just </s>), except replies
+// marked "masked": her old posts in a thread or her memory, which she reads but is not taught.
 // Usage: node train/encode.mjs <base.gguf> <out.json> <held-out fraction> <data.jsonl>...
 import { readFileSync, writeFileSync } from "node:fs";
 import { BeeModel } from "../src/server/bee.ts";
@@ -20,13 +21,13 @@ for (const file of files) {
 		const ids = [], mask = [];
 		turns.forEach((t, i) => {
 			if (t.role !== (i % 2 ? "bee" : "user")) throw new Error(`${file}: turns must alternate: ${line.slice(0, 120)}`);
-			if (t.role === "bee" && t.content !== "" && !MOOD.test(t.content)) throw new Error(`${file}: bee reply without mood tag: ${t.content.slice(0, 80)}`);
+			if (t.role === "bee" && !t.masked && t.content !== "" && !MOOD.test(t.content)) throw new Error(`${file}: bee reply without mood tag: ${t.content.slice(0, 80)}`);
 			if (t.role === "user") {
 				const toks = [bee.userToken, ...bee.tokenize(t.content)];
 				ids.push(...toks); mask.push(...toks.map(() => 0));
 			} else {
 				const toks = [...bee.tokenize(t.content), bee.eos];
-				ids.push(bee.beeToken, ...toks); mask.push(0, ...toks.map(() => 1));
+				ids.push(bee.beeToken, ...toks); mask.push(0, ...toks.map(() => (t.masked ? 0 : 1)));
 			}
 		});
 		(random() < Number(heldOut) ? split.val : split.train).push({ ids, mask, source: file.split("/").pop() });
