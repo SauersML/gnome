@@ -1,11 +1,11 @@
 // Samples a BeeLLM GGUF through the production engine on fixed probes and reports how often
 // each probe gets the intended mood, how often banned hedging appears, and example replies.
-// Usage: node train/probe.mjs <model.gguf> [samples per probe] [examples shown per probe] [temperature] [candidates] [repeat penalty] [first-token temperature] [relevance] [garble penalty]
+// Usage: node train/probe.mjs <model.gguf> [samples per probe] [examples shown per probe] [temperature] [candidates] [repeat penalty] [first-token temperature] [relevance] [1 = the Worker's draft penalty]
 import { readFileSync } from "node:fs";
 import { BeeModel, LLAMA_SERVER_SAMPLING } from "../src/server/bee.ts";
-import { garbleShare } from "../src/server/garble.ts";
+import { garblePenalty, garbleShare } from "../src/server/garble.ts";
 
-const [gguf, samplesArg = "12", shownArg = "3", temperature = String(LLAMA_SERVER_SAMPLING.temperature), candidatesArg = "1", repeatPenalty = "1", firstTemperature = "", relevance = "0", garblePenalty = "0"] = process.argv.slice(2);
+const [gguf, samplesArg = "12", shownArg = "3", temperature = String(LLAMA_SERVER_SAMPLING.temperature), candidatesArg = "1", repeatPenalty = "1", firstTemperature = "", relevance = "0", garbleArg = "0"] = process.argv.slice(2);
 const buf = readFileSync(gguf);
 const bee = new BeeModel(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), 1200, { ...LLAMA_SERVER_SAMPLING, temperature: Number(temperature), repeatPenalty: Number(repeatPenalty), loopLimit: 6, firstTemperature: firstTemperature ? Number(firstTemperature) : undefined });
 const u = (content) => ({ role: "user", content });
@@ -40,9 +40,9 @@ let right = 0, scored = 0, hedges = 0, total = 0, replies = 0, garbled = 0;
 const distinct = new Set();
 for (const [name, turns, moods] of PROBES) {
 	const heard = turns.at(-1).content;
-	const penalty = Number(garblePenalty) ? (text) => Number(garblePenalty) * garbleShare(text, heard) : undefined;
+	const penalty = Number(garbleArg) ? garblePenalty(heard) : undefined;
 	const outs = Array.from({ length: samples }, () => bee.reply(turns, Math.random, 512, Number(candidatesArg), Number(relevance), penalty));
-	for (const o of outs) { distinct.add(o); replies++; garbled += garbleShare(o, heard); }
+	for (const o of outs) { distinct.add(o); replies++; if (o) garbled += garbleShare(o, heard); }
 	const moodOf = (s) => (s === "" ? "" : (s.match(/^\[([a-z]+):/)?.[1] ?? "none"));
 	const hits = moods ? outs.filter((s) => moods.includes(moodOf(s))).length : null;
 	const hedged = outs.filter((s) => FORBIDDEN.test(s)).length;

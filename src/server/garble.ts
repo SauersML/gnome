@@ -34,8 +34,16 @@ export function garbleShare(reply: string, heard = ""): number {
 	return words.filter((w) => !reads(w, also)).length / words.length;
 }
 
+// Whether a reply opens broken: bare punctuation right after the mood tag ("[happy:high]!!!"),
+// or a half-word as its first word (after an opening *action*).
+export function opensBroken(reply: string, heard = ""): boolean {
+	const body = reply.replace(/^\[[a-z]+:[a-z]+\]\s*/, "");
+	const first = body.replace(/^\*[^*]*\*\s*/, "").match(/^[^A-Za-z]*([A-Za-z]+)/)?.[1];
+	return /^[!?.,:]/.test(body) || (first !== undefined && first.length >= 2 && garbleShare(first, heard) > 0);
+}
+
 // Mellifera's draft penalty when answering `heard`: of two drafts, one half-word in ten
-// outweighs a 0.6 nat higher mean log-probability.
+// outweighs a 0.6 nat higher mean log-probability, and a broken opening outweighs 1 nat.
 export function garblePenalty(heard: string): (draft: string) => number {
-	return (draft) => 6 * garbleShare(draft, heard);
+	return (draft) => 6 * garbleShare(draft, heard) + (opensBroken(draft, heard) ? 1 : 0);
 }

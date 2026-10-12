@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { BeeModel, loopExcess } from '../src/server/bee.ts';
-import { garbleShare } from '../src/server/garble.ts';
+import { garbleShare, opensBroken } from '../src/server/garble.ts';
 
 // Reference values from llama.cpp's llama-server (0.6.0, build 11429) on the same pinned GGUF.
 const LLAMA_CPP_TOKENS = {
@@ -62,7 +62,7 @@ const MELLIFERA_TOKENS = {
   'émoji 🐝 and commas, ok': [200, 174, 2272, 2044, 1999, 1989, 245, 164, 149, 162, 429, 1164, 3265, 2140, 1345],
 };
 const MELLIFERA_CHAT_IDS = [1, 3, 2378, 271, 1991, 4, 2098, 4103, 4109, 4221, 339, 2, 3, 983, 4];
-const MELLIFERA_TOP_LOGPROBS = [[2081, -0.00356], [2088, -6.67597], [2076, -8.0568], [2214, -8.89023], [2098, -9.18844]];
+const MELLIFERA_TOP_LOGPROBS = [[2081, -0.00243], [2088, -7.01464], [2076, -8.47058], [2214, -9.24656], [2098, -9.49681]];
 
 test('Mellifera tokenizes and predicts as llama.cpp does', () => {
   const m = JSON.parse(readFileSync(new URL('../town/public/bee/BeeLLM-13M-Mellifera.gguf.json', import.meta.url), 'utf8'));
@@ -91,4 +91,12 @@ test('half-words count against a reply; words, run-together words, buzzes and wo
   assert.equal(garbleShare('[happy:high]'), 1);
   assert.equal(garbleShare('[happy:high] !!! *'), 1);
   assert.equal(garbleShare('[happy:high] 🐝🐝'), 0);
+});
+
+test('a reply opens broken on bare punctuation or a half-word right after its mood tag', () => {
+  assert.equal(opensBroken('[happy:high]!!! *zooms in a circle* best bee'), true);
+  assert.equal(opensBroken('[happy:high] SPERFED!!! *lands near the hum*'), true);
+  assert.equal(opensBroken('[happy:high] *slams into the screen* THELL!!! bzz'), true);
+  assert.equal(opensBroken('[loving:high] *dives in* FLOWERS!!! bzzzz~'), false);
+  assert.equal(opensBroken('[happy:high] ruined that!!! bzz', 'LLMs have ruined metaphor'), false);
 });

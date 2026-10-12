@@ -83,7 +83,10 @@ llama forward pass in PyTorch (checked against llama.cpp by `train/parity_check.
 Stage A (`train/pretrain.py`) teaches English on TinyStories with bee chat mixed in; stage B
 (`train/train.py`) fine-tunes on the bee conversations in `train/data/`.
 `train/extend_vocab.py` grows the vocabulary with whole tokens for her caps words
-(MELLIFERA, NECTAR, YES!!!), so the small model does not spell them from fragments.
+(MELLIFERA, NECTAR, YES!!!), so the small model does not spell them from fragments, and
+`train/caps.mjs` keeps caps in her data only on words held in one or two tokens.
+`train/data/raw-computer*.jsonl` teach her where she lives: a Cloudflare computer, behind
+the screen, as thirteen million weights.
 `train/data/raw-threads.jsonl` holds real delve.town threads she answered, with her old
 replies in the prompt masked out of the loss. `train/probe.mjs` samples a checkpoint through
 the production engine and scores moods, hedging, variety and half-words;
