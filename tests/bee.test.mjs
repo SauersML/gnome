@@ -19,8 +19,9 @@ const LLAMA_CPP_CHAT = [
 const LLAMA_CPP_CHAT_IDS = [1, 3, 1991, 539, 271, 1991, 4, 2010, 279, 2009, 284, 2011, 267, 301, 293, 1991, 327, 291, 2, 3, 983, 4];
 const LLAMA_CPP_TOP_LOGPROBS = [[2010, -0.01208], [2, -4.42223], [410, -14.61032], [283, -15.10869], [267, -15.27159]];
 
-const manifest = JSON.parse(readFileSync(new URL('../public/bee/BeeLLM-12M-Mood.gguf.json', import.meta.url), 'utf8'));
-const weights = Buffer.concat(manifest.parts.map(part => readFileSync(new URL(`../public/bee/${part}`, import.meta.url))));
+// The original BeeLLM 12M Mood, fetched into .bee-cache by the pretest script.
+const manifest = JSON.parse(readFileSync(new URL('../.bee-cache/bee/BeeLLM-12M-Mood.gguf.json', import.meta.url), 'utf8'));
+const weights = Buffer.concat(manifest.parts.map(part => readFileSync(new URL(`../.bee-cache/bee/${part}`, import.meta.url))));
 const bee = new BeeModel(weights.buffer.slice(weights.byteOffset, weights.byteOffset + weights.byteLength));
 
 test('the tokenizer reproduces llama.cpp exactly, and typed text cannot form control tokens', () => {

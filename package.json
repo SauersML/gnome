@@ -33,7 +33,7 @@
 	},
 	"private": true,
 	"scripts": {
-		"pretest": "node scripts/fetch-bee.mjs public BeeLLM-12M-Mood && node scripts/fetch-bee.mjs swarm/public BeeLLM-12M-Mood BeeLLM-1M-Mood BeeLLM-1M-Mood-Chaos BeeLLM-42P-Chaos BeeLLM-42P BeeLLM-30P && node scripts/fetch-bee.mjs town/public BeeLLM-12M-Scintilla",
+		"pretest": "node scripts/fetch-bee.mjs .bee-cache BeeLLM-12M-Mood && node scripts/fetch-bee.mjs public BeeLLM-12M-Scintilla && node scripts/fetch-bee.mjs swarm/public BeeLLM-12M-Scintilla BeeLLM-1M-Mood BeeLLM-1M-Mood-Chaos BeeLLM-42P-Chaos BeeLLM-42P BeeLLM-30P && node scripts/fetch-bee.mjs town/public BeeLLM-12M-Scintilla",
 		"test": "node --test tests/*.test.mjs",
 		"cf-typegen": "wrangler types ./src/server/worker-configuration.d.ts",
 		"check": "tsc --project src/client && tsc --project src/server && wrangler deploy --dry-run",

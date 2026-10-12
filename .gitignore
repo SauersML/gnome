@@ -203,3 +203,4 @@ public/bee/
 swarm/public/bee/
 town/public/
 __pycache__/
+.bee-cache/

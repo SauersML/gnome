@@ -1,8 +1,8 @@
 // bee.gnome.science: the swarm page (static assets) and POST /api/buzz, which runs one
 // bee on the conversation so far. The page decides who buzzes next and when to stop.
-import type { BeeModel } from "../../src/server/bee";
+import { type BeeModel, LLAMA_SERVER_SAMPLING } from "../../src/server/bee";
 import { loadBee } from "../../src/server/bee-assets";
-import { SWARM, parseBuzz, speak } from "./swarm";
+import { type SwarmBee, parseBuzz, speak } from "./swarm";
 
 interface Env {
 	ASSETS: Fetcher;
@@ -15,10 +15,11 @@ const MAX_BODY = 64 * 1024;
 const OLD_UI = /^\/(?:props|models(?:\/.*)?|v1\/models|health|v1\/health|build\.json|tools|slots|cors-proxy|v1\/chat\/completions(?:\/.*)?|v1\/streams?(?:\/.*)?|manifest\.webmanifest|_app\/.*)$/;
 const models = new Map<string, Promise<BeeModel>>();
 
-function model(env: Env, file: string): Promise<BeeModel> {
+function model(env: Env, bee: SwarmBee): Promise<BeeModel> {
+	const file = bee.file;
 	let m = models.get(file);
 	if (!m) {
-		m = loadBee(env.ASSETS, file);
+		m = loadBee(env.ASSETS, file, undefined, { ...LLAMA_SERVER_SAMPLING, ...bee.sampling });
 		models.set(file, m);
 		m.catch(() => models.delete(file));
 	}
@@ -42,7 +43,7 @@ export default {
 		const parsed = parseBuzz(body);
 		if ("error" in parsed) return error(400, parsed.error);
 		try {
-			const text = speak(parsed.bee, await model(env, parsed.bee.file), parsed.transcript);
+			const text = speak(parsed.bee, await model(env, parsed.bee), parsed.transcript);
 			return Response.json({ bee: parsed.bee.id, text });
 		} catch (e) {
 			console.error(parsed.bee.id, "failed:", e instanceof Error ? e.message : String(e));
