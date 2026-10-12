@@ -13,7 +13,9 @@ const TOKEN_NORMAL = 1;
 const TOKEN_CONTROL = 3;
 const TOKEN_BYTE = 6;
 
-export type Sampling = { topK: number; topP: number; minP: number; temperature: number };
+// repeatPenalty divides positive logits (and multiplies negative ones) of tokens among the last
+// repeatLastN tokens of the reply, as llama.cpp's repeat_penalty does; 1 turns it off.
+export type Sampling = { topK: number; topP: number; minP: number; temperature: number; repeatPenalty?: number; repeatLastN?: number };
 // llama-server defaults: top_k 40 -> top_p 0.95 -> min_p 0.05 -> temperature 0.8.
 export const LLAMA_SERVER_SAMPLING: Sampling = { topK: 40, topP: 0.95, minP: 0.05, temperature: 0.8 };
 export const MAX_PROMPT_TOKENS = 512;
@@ -372,8 +374,12 @@ export class BeeModel {
 		return logits;
 	}
 
-	sample(logits: Float32Array, random: () => number): number {
-		const { topK, topP, minP, temperature } = this.sampling;
+	sample(logits: Float32Array, random: () => number, recent: number[] = []): number {
+		const { topK, topP, minP, temperature, repeatPenalty = 1, repeatLastN = 64 } = this.sampling;
+		if (repeatPenalty !== 1 && recent.length) {
+			logits = logits.slice();
+			for (const id of new Set(recent.slice(-repeatLastN))) logits[id] = logits[id] > 0 ? logits[id] / repeatPenalty : logits[id] * repeatPenalty;
+		}
 		const ids = Array.from(logits.keys()).sort((a, b) => logits[b] - logits[a]).slice(0, topK);
 		const max = logits[ids[0]];
 		const p = ids.map((id) => Math.exp(logits[id] - max));
@@ -393,33 +399,48 @@ export class BeeModel {
 		return kept[kept.length - 1];
 	}
 
-	// Samples `candidates` replies from one pass over the prompt and keeps the one the model
-	// finds most fluent: the highest mean log-probability per token, the end of reply included.
-	private generate(prompt: number[], maxTokens: number, random: () => number, candidates = 1): string {
+	// Mean log-probability per token of `reply` (its end included) right after `prefix`.
+	private meanLogProb(prefix: number[], reply: number[]): number {
+		const ids = [...prefix, ...reply];
+		let logits = this.forward(prefix, 0), total = 0;
+		for (let i = prefix.length; i <= ids.length; i++) {
+			const next = i < ids.length ? ids[i] : this.eos;
+			total += logProb(logits, next);
+			if (i < ids.length) logits = this.forward([ids[i]], i);
+		}
+		return total / (reply.length + 1);
+	}
+
+	// Samples `candidates` replies from one pass over the prompt and keeps the best: the most
+	// fluent (highest mean log-probability per token, the end of reply included), or, with
+	// `relevance` > 0, the one that much more likely after this prompt than after an empty one,
+	// which favours replies about what was actually said over replies that fit any post.
+	private generate(prompt: number[], maxTokens: number, random: () => number, candidates = 1, relevance = 0): string {
 		const first = this.forward(prompt, 0);
-		let best = "", bestScore = -Infinity;
+		const drafts: { ids: number[]; score: number }[] = [];
 		for (let c = 0; c < candidates; c++) {
 			let logits = first;
 			const out: number[] = [];
 			let logp = 0, steps = 0;
 			for (let pos = prompt.length; out.length < maxTokens; pos++) {
-				const id = this.sample(logits, random);
+				const id = this.sample(logits, random, out);
 				logp += logProb(logits, id);
 				steps++;
 				if (id === this.eos || this.tokenTypes[id] === TOKEN_CONTROL) break;
 				out.push(id);
 				logits = this.forward([id], pos);
 			}
-			if (logp / steps > bestScore) {
-				bestScore = logp / steps;
-				best = this.detokenize(out).trim();
-			}
+			drafts.push({ ids: out, score: logp / steps });
 		}
-		return best;
+		if (relevance > 0 && this.chat && candidates > 1) {
+			for (const d of drafts) d.score -= relevance * this.meanLogProb([this.bos, this.beeToken], d.ids);
+		}
+		const best = drafts.reduce((a, b) => (b.score > a.score ? b : a));
+		return this.detokenize(best.ids).trim();
 	}
 
-	reply(turns: BeeTurn[], random: () => number = Math.random, maxPromptTokens = MAX_PROMPT_TOKENS, candidates = 1): string {
-		return this.generate(this.promptTokens(turns, maxPromptTokens), MAX_REPLY_TOKENS, random, candidates);
+	reply(turns: BeeTurn[], random: () => number = Math.random, maxPromptTokens = MAX_PROMPT_TOKENS, candidates = 1, relevance = 0): string {
+		return this.generate(this.promptTokens(turns, maxPromptTokens), MAX_REPLY_TOKENS, random, candidates, relevance);
 	}
 
 	// For bees without a chat template: continue <s> + text, as llama.cpp's /completion does.
