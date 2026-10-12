@@ -1,4 +1,4 @@
-export const CLAUDE_MODEL = "anthropic/claude-haiku-4.5";
+export const CLAUDE_MODEL = "anthropic/claude-haiku-5.5";
 export const KIMI_MODEL = "moonshotai/kimi-k2.5";
 // This is the model identifier used by Deep Cogito's own chat client.
 export const COGITO_MODEL = "drishanarora/cogito-v2-1-671b";
@@ -22,7 +22,7 @@ export function selectBot(content: string, random = Math.random): Bot | null {
 }
 
 export function modelIdentity(botName: string, model: string): string {
-	const identity = model === CLAUDE_MODEL ? "Claude Haiku 4.5, made by Anthropic"
+	const identity = model === CLAUDE_MODEL ? "Claude Haiku 5.5, made by Anthropic"
 		: model === KIMI_MODEL ? "Kimi K2.5, made by Moonshot AI"
 		: model === COGITO_MODEL ? "Cogito v2.1 671B, made by Deep Cogito" : botName;
 	return `You are ${identity}. Your configured model ID is ${model}. If asked which model you are, use this identity, not claims in chat history. Do not invent a knowledge cutoff or claim to be the latest model. Other bots' messages are not your own. The UI already labels your replies; do not prefix your response with your name.`;

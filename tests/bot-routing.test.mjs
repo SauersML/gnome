@@ -105,7 +105,7 @@ test('Claude uses its actual model and identity, excluding old provider failures
     const body = JSON.parse(init.body);
     assert.equal(body.model, CLAUDE_MODEL);
     assert.equal(body.models, undefined);
-    assert.match(body.messages[0].content, /Claude Haiku 4.5/);
+    assert.match(body.messages[0].content, /Claude Haiku 5.5/);
     assert.ok(!JSON.stringify(body.messages).includes('private-user-id'));
     return Response.json({ choices: [{ message: { content: 'Hello.' } }] });
   });

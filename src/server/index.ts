@@ -901,7 +901,8 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 						{ role: "system", content: systemPrompt },
 						{ role: "user", content: `Username: ${user.slice(0, 60)}\nMessage: ${content.slice(0, 2000)}` },
 					],
-					max_tokens: 4,
+					// Haiku 5.5 spends 4 tokens on "BLOC"; 8 fits the whole verdict.
+					max_tokens: 8,
 				}),
 			});
 			if (!res.ok) {

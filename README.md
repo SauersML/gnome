@@ -16,7 +16,7 @@ must be retained when deploying. `/transformer` and its former assets return 410
 ## Bots
 
 Explicit mentions select exactly one model. Claude uses
-`anthropic/claude-haiku-4.5`; Kimi uses `moonshotai/kimi-k2.5`. Their secret is
+`anthropic/claude-haiku-5.5`; Kimi uses `moonshotai/kimi-k2.5`. Their secret is
 `OPENROUTER_API_KEY`. Cogito uses Deep Cogito's own website and its model ID
 `drishanarora/cogito-v2-1-671b`. There is no model fallback.
 
