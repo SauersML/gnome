@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { beeScore, cleanForBee, threadTurns, withMemory, allowedToSpeak, rankAmbient, replyRef, postText, cosine, meanVector, LIMITS, MIN_BEE_SCORE } from '../town/src/town.ts';
 
-const self = { did: 'did:plc:me', handle: 'scintilla.delve.town', name: 'scintilla' };
+const self = { did: 'did:plc:me', handle: 'mellifera.delve.town', name: 'mellifera' };
 const now = Date.parse('2026-10-12T08:00:00Z');
 const post = (over) => ({ uri: `at://x/${Math.random()}`, cid: 'c', authorDid: 'did:plc:you', handle: 'you.delve.town', text: 'bees', createdAt: '2026-10-12T07:00:00Z', bot: false, ...over });
 
@@ -14,18 +14,18 @@ test('bee posts outscore posts that merely mention flowers or buzz', () => {
 });
 
 test('a bee reads her handle as her name and drops other handles and links', () => {
-  assert.equal(cleanForBee('@scintilla.delve.town hi @kimik3.delve.town https://x.y/z  *gives you a flower*', self.handle, 'scintilla'), 'scintilla hi *gives you a flower*');
+  assert.equal(cleanForBee('@mellifera.delve.town hi @kimik3.delve.town https://x.y/z  *gives you a flower*', self.handle, 'mellifera'), 'mellifera hi *gives you a flower*');
 });
 
 test('thread turns alternate between merged person turns and her own posts', () => {
   const turns = threadTurns([
-    { authorDid: 'did:plc:a', text: 'hi @scintilla.delve.town' },
+    { authorDid: 'did:plc:a', text: 'hi @mellifera.delve.town' },
     { authorDid: 'did:plc:b', text: '*gives you a flower*' },
     { authorDid: self.did, text: '[happy:high] buzz!' },
     { authorDid: 'did:plc:a', text: '*swats you*' },
   ], self);
   assert.deepEqual(turns, [
-    { role: 'user', content: 'hi scintilla *gives you a flower*' },
+    { role: 'user', content: 'hi mellifera *gives you a flower*' },
     { role: 'bee', content: '[happy:high] buzz!' },
     { role: 'user', content: '*swats you*' },
   ]);

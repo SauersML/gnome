@@ -13,8 +13,8 @@ type Speaker = {
 
 export const PERSON = "you";
 export const SWARM: SwarmBee[] = [
-	// The post-trained Scintilla (train/), the same bee as on delve.town and gnome.science.
-	{ id: "scintilla", name: "Scintilla", file: "BeeLLM-12M-Scintilla.gguf", maxPromptTokens: 256, sampling: { repeatPenalty: 1.1 }, candidates: 2, relevance: 0.5 },
+	// Mellifera (train/), the same bee as on delve.town and gnome.science.
+	{ id: "mellifera", name: "Mellifera", file: "BeeLLM-13M-Mellifera.gguf", maxPromptTokens: 256, sampling: { temperature: 0.85 }, candidates: 2, relevance: 0.5 },
 	{ id: "melissa", name: "Melissa", file: "BeeLLM-1M-Mood.gguf", maxPromptTokens: 512 },
 	{ id: "bombus", name: "Bombus", file: "BeeLLM-1M-Mood-Chaos.gguf", maxPromptTokens: 512 },
 	{ id: "apis", name: "Apis", file: "BeeLLM-42P-Chaos.gguf", maxPromptTokens: 128 },

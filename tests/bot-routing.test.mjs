@@ -149,7 +149,7 @@ test('historical generated errors are redacted on reconnect without changing sav
 });
 
 test('the bee answers to bee, @bee and her name, not to words that merely contain them', () => {
-  for (const text of ['hi bee!', '@bee hello', '@Scintilla hi', 'are you scintilla', 'BeeLLM?']) assert.equal(selectBot(text, () => 0.5), 'bee', text);
+  for (const text of ['hi bee!', '@bee hello', '@Mellifera hi', 'are you mellifera', 'BeeLLM?']) assert.equal(selectBot(text, () => 0.5), 'bee', text);
   for (const text of ['beekeeping is fun', 'to be or not to be', 'bees']) assert.equal(selectBot(text, () => 0.5), null, text);
   assert.equal(selectBot('@claude what does the bee think?', () => 0.5), 'claude');
 });
@@ -168,11 +168,11 @@ test('the bee gets only her own conversation, without @, and never touches the L
   let turns;
   chat.env.BEE = { getByName: name => (assert.equal(name, 'bee'), { reply: async t => (turns = t, '[happy:high] *hugs the flower*') }) };
   t.mock.method(globalThis, 'fetch', async () => { throw new Error('the bee must not call a provider'); });
-  await chat.onMessage({ send() {} }, JSON.stringify({ type: 'add', id: 'd', user: 'visitor', role: 'user', content: '@scintilla *gives you a flower*' }));
+  await chat.onMessage({ send() {} }, JSON.stringify({ type: 'add', id: 'd', user: 'visitor', role: 'user', content: '@mellifera *gives you a flower*' }));
   assert.deepEqual(turns, [
     { role: 'user', content: 'hi bee!' },
     { role: 'bee', content: '[neutral:low] buzz' },
-    { role: 'user', content: 'scintilla *gives you a flower*' },
+    { role: 'user', content: 'mellifera *gives you a flower*' },
   ]);
   assert.equal(chat.messages.at(-1).user, 'Bee');
   assert.equal(chat.messages.at(-1).content, '[happy:high] *hugs the flower*');

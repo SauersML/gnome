@@ -20,17 +20,17 @@ Explicit mentions select exactly one model. Claude uses
 `OPENROUTER_API_KEY`. Cogito uses Deep Cogito's own website and its model ID
 `drishanarora/cogito-v2-1-671b`. There is no model fallback.
 
-The bee is Scintilla, post-trained from [BeeLLM 12M Mood](https://huggingface.co/schizophyllume/BeeLLM)
+The bee is Mellifera, post-trained from [BeeLLM 12M Mood](https://huggingface.co/schizophyllume/BeeLLM)
 (see "Post-training the delve.town bee"), run inside the Worker by the `BeeHive` Durable Object (`src/server/bee.ts`: GGUF reader,
 llama.cpp's SPM tokenizer, llama forward pass, llama-server's default sampler). She
-answers to `bee`, `@bee` and her name, Scintilla, and sees only messages that name
+answers to `bee`, `@bee` and her name, Mellifera, and sees only messages that name
 her plus her own replies. The build runs `scripts/fetch-bee.mjs`, which downloads the
 pinned GGUF, checks its SHA-256, and splits it into `public/bee/` (ignored by git).
 `tests/bee.test.mjs` compares tokens and next-token probabilities with llama.cpp.
 
 ## bee.gnome.science
 
-`swarm/` is a second Worker (`npm run deploy:swarm`): six BeeLLM models (Scintilla post-trained,
+`swarm/` is a second Worker (`npm run deploy:swarm`): six BeeLLM models (Mellifera post-trained,
 her five sisters as published) answer one
 after another, each hearing the person in full and the latest two buzzes of the other bees,
 until the swarm settles. The page decides who speaks next; `POST /api/buzz` runs one bee.
@@ -71,7 +71,7 @@ offline behavior, and rejection of forged chat frames.
 
 ## Post-training the delve.town bee
 
-`train/` post-trains BeeLLM 12M Mood into Scintilla (on delve.town, gnome.science/chat and the swarm): vivid bee senses,
+`train/` post-trains BeeLLM 12M Mood into Mellifera (on delve.town, gnome.science/chat and the swarm): vivid bee senses,
 confident self-awareness, agency, and the original mood mechanics. `train/model.py` is the
 llama forward pass in PyTorch (checked against llama.cpp by `train/parity_check.py`);
 `train/encode.mjs` and `train/encode-text.mjs` tokenize with the production tokenizer.

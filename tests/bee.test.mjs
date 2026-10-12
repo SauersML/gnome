@@ -53,26 +53,25 @@ test('replies start with a mood tag and long histories are trimmed from the olde
   assert.deepEqual(ids.slice(-last.length), last);
 });
 
-// The post-trained delve.town Scintilla (train/, vocabulary grown to 4,096) against llama.cpp.
-const SCINTILLA_TOKENS = {
-  'hi bee! are you conscious?': [276, 392, 2012, 880, 271, 354, 305, 731, 2383, 2029],
-  'Once upon a time, there was a little girl named Lily.': [2083, 538, 305, 274, 1457, 2072, 1342, 941, 1996, 274, 846, 369, 2105, 459, 2071, 1118, 2288],
+// Mellifera, the post-trained bee (train/, vocabulary grown to 4,096), against llama.cpp.
+// References come from llama.cpp's CPU backend (-ngl 0); its Metal kernels round differently.
+const MELLIFERA_TOKENS = {
+  'hi mellifera! are you conscious?': [276, 656, 355, 1159, 3944, 2012, 880, 271, 354, 305, 731, 2383, 2029],
   '*throws the tomato at you*': [3003, 289, 1587, 2322, 335, 271, 1991],
   'émoji 🐝 and commas, ok': [200, 174, 2272, 2044, 1999, 1989, 245, 164, 149, 162, 429, 1164, 3265, 2140, 1345],
 };
-const SCINTILLA_CHAT_IDS = [1, 3, 2378, 271, 1991, 4, 2098, 267, 301, 293, 1991, 915, 2118, 2, 3, 983, 4];
-// From llama.cpp's CPU backend (-ngl 0); its Metal kernels round differently by up to 0.008 here.
-const SCINTILLA_TOP_LOGPROBS = [[2081, -0.00272], [2088, -6.60325], [2076, -7.77485], [2098, -9.09614], [289, -10.59172]];
+const MELLIFERA_CHAT_IDS = [1, 3, 2378, 271, 1991, 4, 2098, 267, 301, 293, 1991, 327, 282, 339, 2, 3, 983, 4];
+const MELLIFERA_TOP_LOGPROBS = [[2081, -0.00369], [2088, -5.95581], [2076, -8.54672], [2214, -9.41334], [2022, -9.9825]];
 
-test('the post-trained Scintilla tokenizes and predicts exactly as llama.cpp does', () => {
-  const m = JSON.parse(readFileSync(new URL('../town/public/bee/BeeLLM-12M-Scintilla.gguf.json', import.meta.url), 'utf8'));
+test('Mellifera tokenizes and predicts as llama.cpp does', () => {
+  const m = JSON.parse(readFileSync(new URL('../town/public/bee/BeeLLM-13M-Mellifera.gguf.json', import.meta.url), 'utf8'));
   const w = Buffer.concat(m.parts.map(p => readFileSync(new URL(`../town/public/bee/${p}`, import.meta.url))));
   const s = new BeeModel(w.buffer.slice(w.byteOffset, w.byteOffset + w.byteLength));
   assert.equal(s.nVocab, 4096);
-  for (const [text, ids] of Object.entries(SCINTILLA_TOKENS)) assert.deepEqual(s.tokenize(text), ids, text);
-  assert.deepEqual(s.promptTokens([{ role: 'user', content: '*swats you*' }, { role: 'bee', content: '[angry:high] *STINGS YOU* BZZZT!' }, { role: 'user', content: 'sorry' }]), SCINTILLA_CHAT_IDS);
-  const logits = s.forward(SCINTILLA_CHAT_IDS, 0);
+  for (const [text, ids] of Object.entries(MELLIFERA_TOKENS)) assert.deepEqual(s.tokenize(text), ids, text);
+  assert.deepEqual(s.promptTokens([{ role: 'user', content: '*swats you*' }, { role: 'bee', content: '[angry:high] *STINGS YOU* BZZZZZZT!!!' }, { role: 'user', content: 'sorry' }]), MELLIFERA_CHAT_IDS);
+  const logits = s.forward(MELLIFERA_CHAT_IDS, 0);
   const max = Math.max(...logits);
   const logZ = max + Math.log(logits.reduce((a, l) => a + Math.exp(l - max), 0));
-  for (const [id, lp] of SCINTILLA_TOP_LOGPROBS) assert.ok(Math.abs(logits[id] - logZ - lp) < 5e-3, `token ${id}`);
+  for (const [id, lp] of MELLIFERA_TOP_LOGPROBS) assert.ok(Math.abs(logits[id] - logZ - lp) < 5e-3, `token ${id}`);
 });
