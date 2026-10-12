@@ -88,4 +88,7 @@ test('half-words count against a reply; words, run-together words, buzzes and wo
   assert.equal(garbleShare('[happy:high] SWEETNECTAR!!! *dives in* bzzzzz HONEYHONEYHONEY'), 0);
   assert.equal(garbleShare('[loving:high] villanelle!!! *lands on it*', 'a cryptographic villanelle'), 0);
   assert.equal(garbleShare('[happy:high] PERCTOME SUATCE flower'), 2 / 3);
+  assert.equal(garbleShare('[happy:high]'), 1);
+  assert.equal(garbleShare('[happy:high] !!! *'), 1);
+  assert.equal(garbleShare('[happy:high] 🐝🐝'), 0);
 });

@@ -1,6 +1,7 @@
 // Pure logic for the delve.town bee agents: what counts as a bee post, what a bee hears and
 // remembers, and how often she may speak.
 import type { BeeTurn } from "../../src/server/bee";
+import { saysSomething } from "../../src/server/garble.ts";
 
 export type Ref = { uri: string; cid: string };
 export type TownPost = Ref & { authorDid: string; handle: string; text: string; createdAt: string; root?: Ref; bot: boolean };
@@ -137,8 +138,9 @@ export function replyRef(post: TownPost) {
 }
 
 // Her reply as posted: never tagging anyone ("@sauers.delve.town" becomes "sauers"), within
-// the town's length limit.
+// the town's length limit. A mood tag with nothing after it is silence.
 export function postText(reply: string): string {
+	if (!saysSomething(reply)) return "";
 	// A reply can end inside a multi-byte character the model only half wrote; drop the remnant.
 	const text = reply.replace(/\uFFFD/g, "").replace(/@([a-z0-9-]+)(?:\.[a-z0-9-]+)+/gi, "$1").replace(/[ \t]+/g, " ").trim();
 	const chars = Array.from(text);

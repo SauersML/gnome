@@ -18,9 +18,16 @@ function reads(run: string, also: Set<string>): boolean {
 	return ok[w.length];
 }
 
+// Whether a reply says anything after its mood tag: a letter or an emoji.
+export function saysSomething(reply: string): boolean {
+	return /[\p{L}\p{Extended_Pictographic}]/u.test(reply.replace(/^\[[a-z]+:[a-z]+\]/, ""));
+}
+
 // The share of a reply's words (3+ letters; mood tag excluded) that are neither words she knows,
-// words from what she is answering, nor bee sounds: half-words like "SUATCE" or "pverle".
+// words from what she is answering, nor bee sounds: half-words like "SUATCE" or "pverle". A
+// reply that is only a mood tag (or a tag and punctuation) counts as all half-words.
 export function garbleShare(reply: string, heard = ""): number {
+	if (!saysSomething(reply)) return 1;
 	const words = reply.replace(/^\[[a-z]+:[a-z]+\]/, "").match(/[A-Za-z]{3,}/g) ?? [];
 	if (!words.length) return 0;
 	const also = new Set((heard.match(/[A-Za-z]{2,}/g) ?? []).map((w) => w.toLowerCase()));

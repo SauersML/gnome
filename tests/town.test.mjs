@@ -89,4 +89,6 @@ test('she never tags anyone, and vector maths behaves', () => {
 test('posts stay within the town length limit', () => {
   assert.equal(Array.from(postText('🐝'.repeat(400))).length, 290);
   assert.equal(postText('  buzz  '), 'buzz');
+  assert.equal(postText('[happy:high]'), '');
+  assert.equal(postText('[happy:high] !!!'), '');
 });
