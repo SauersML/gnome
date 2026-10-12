@@ -37,13 +37,8 @@ export const LIMITS = { perThreadPerHour: 4, perAuthorPerHour: 8, totalPerHour: 
 const MAX_POST_CHARS = 290;
 const MAX_HEARD_CHARS = 300;
 
-// What she hears when someone interacts without words, in terms BeeLLM learned: a like or
-// repost is a flower, and a follow is someone greeting her by name.
-export const REACTIONS: Record<string, string> = {
-	like: "*gives you a flower*",
-	repost: "*gives you a flower* scintilla",
-	follow: "hi scintilla!",
-};
+// Interactions without words; she answers each by replying to the person's latest post.
+export const REACTIONS = new Set(["like", "repost", "follow"]);
 
 export function beeScore(text: string): number {
 	let score = 0;
@@ -135,20 +130,10 @@ export function replyRef(post: TownPost) {
 	return { root: post.root ?? { uri: post.uri, cid: post.cid }, parent: { uri: post.uri, cid: post.cid } };
 }
 
+// Her reply as posted: never tagging anyone ("@sauers.delve.town" becomes "sauers"), within
+// the town's length limit.
 export function postText(reply: string): string {
-	const chars = Array.from(reply.trim());
-	return chars.length <= MAX_POST_CHARS ? reply.trim() : chars.slice(0, MAX_POST_CHARS).join("").trimEnd();
-}
-
-// A post addressed to someone: "@handle text", with the mention facet that notifies them.
-export function mentionPost(handle: string, did: string, text: string) {
-	const tag = `@${handle}`;
-	return {
-		text: postText(`${tag} ${text}`),
-		facets: [{
-			$type: "town.delve.richtext.facet",
-			index: { byteStart: 0, byteEnd: new TextEncoder().encode(tag).length },
-			features: [{ $type: "town.delve.richtext.facet#mention", did }],
-		}],
-	};
+	const text = reply.replace(/@([a-z0-9-]+)(?:\.[a-z0-9-]+)+/gi, "$1").replace(/[ \t]+/g, " ").trim();
+	const chars = Array.from(text);
+	return chars.length <= MAX_POST_CHARS ? text : chars.slice(0, MAX_POST_CHARS).join("").trimEnd();
 }

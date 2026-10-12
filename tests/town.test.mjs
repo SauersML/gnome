@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { beeScore, cleanForBee, threadTurns, withMemory, allowedToSpeak, rankAmbient, replyRef, postText, mentionPost, cosine, meanVector, LIMITS, MIN_BEE_SCORE, MIN_BEE_SIMILARITY } from '../town/src/town.ts';
+import { beeScore, cleanForBee, threadTurns, withMemory, allowedToSpeak, rankAmbient, replyRef, postText, cosine, meanVector, LIMITS, MIN_BEE_SCORE, MIN_BEE_SIMILARITY } from '../town/src/town.ts';
 
 const self = { did: 'did:plc:me', handle: 'scintilla.delve.town', name: 'scintilla' };
 const now = Date.parse('2026-10-12T08:00:00Z');
@@ -71,11 +71,8 @@ test('her memory of other conversations comes before the conversation at hand', 
   ]);
 });
 
-test('a mention post tags the person with a facet covering the handle', () => {
-  const m = mentionPost('sauers.delve.town', 'did:plc:s', '[happy:high] bzz');
-  assert.equal(m.text, '@sauers.delve.town [happy:high] bzz');
-  assert.deepEqual(m.facets[0].index, { byteStart: 0, byteEnd: 18 });
-  assert.equal(m.facets[0].features[0].did, 'did:plc:s');
+test('she never tags anyone, and vector maths behaves', () => {
+  assert.equal(postText('[happy:high] run by @sauers.delve.town, hi @kimik3.delve.town!'), '[happy:high] run by sauers, hi kimik3!');
   assert.ok(Math.abs(cosine([1, 0], [1, 0]) - 1) < 1e-12 && cosine([1, 0], [0, 1]) === 0);
   assert.deepEqual(meanVector([[1, 3], [3, 5]]), [2, 4]);
 });

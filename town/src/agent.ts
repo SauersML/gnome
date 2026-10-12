@@ -5,7 +5,7 @@ import { loadBee } from "../../src/server/bee-assets";
 import {
 	AMBIENT_EVERY_MS, BEE_PROTOTYPES, MAX_POST_AGE_MS, OWN_POST_EVERY_MS, REACTIONS, REACT_EVERY_MS, SEARCH_TERMS,
 	type Memory, type Spoken, type TownPost,
-	allowedToSpeak, cleanForBee, cosine, meanVector, mentionPost, postText, rankAmbient, replyRef, threadTurns, withMemory,
+	allowedToSpeak, cleanForBee, cosine, meanVector, postText, rankAmbient, replyRef, threadTurns, withMemory,
 } from "./town";
 
 // sampling, candidates (replies sampled per prompt) and relevance (how much the kept reply must
@@ -160,24 +160,28 @@ export class BeeAgent extends DurableObject<Env> {
 		return "replied";
 	}
 
-	// Likes, reposts and follows get a post addressed to the person; follows are followed back.
+	// Likes, reposts and follows: she follows back new followers, and answers the interaction by
+	// replying directly to the person's latest post of their own (never by tagging them).
 	private async react(bee: TownBee, s: Session, n: any): Promise<string> {
 		const did: string = n.author.did;
-		const recent = this.spoken().some((x) => x.root === "reaction" && x.author === did && Date.now() - x.at < REACT_EVERY_MS);
 		if (n.reason === "follow" && !n.author.viewer?.following) {
 			await xrpc(PDS, "com.atproto.repo.createRecord", {
 				jwt: s.accessJwt,
 				body: { repo: s.did, collection: "town.delve.graph.follow", record: { $type: "town.delve.graph.follow", subject: did, createdAt: new Date().toISOString() } },
 			});
 		}
-		if (recent) return n.reason === "follow" ? "followed back" : "already reacted";
-		const heard = REACTIONS[n.reason];
-		const reply = await this.buzz(bee, `reaction:${did}`, [{ role: "user", content: heard }]);
-		if (!reply) return "silent";
-		await this.createPost(s, mentionPost(n.author.handle, did, reply));
+		if (this.spoken().some((x) => x.root === "reaction" && x.author === did && Date.now() - x.at < REACT_EVERY_MS)) {
+			return n.reason === "follow" ? "followed back" : "visited recently";
+		}
+		const feed = await xrpc<{ feed: any[] }>(APPVIEW, "town.delve.feed.getAuthorFeed", { query: { actor: did, limit: "10", filter: "posts_no_replies" } }).catch(() => ({ feed: [] }));
+		const target = feed.feed.map((f) => toPost(f.post))
+			.find((p) => p.authorDid === did && !p.root && !this.handled(p.uri) && Date.now() - Date.parse(p.createdAt) < MAX_POST_AGE_MS);
+		if (!target) return "no recent post";
+		this.markHandled(target.uri, "answering");
+		const outcome = await this.talk(bee, s, target);
+		this.markHandled(target.uri, outcome);
+		if (outcome !== "replied") return outcome;
 		this.ctx.storage.sql.exec(`INSERT INTO spoken (at, root, author) VALUES (?, 'reaction', ?)`, Date.now(), did);
-		this.remember(`reaction:${did}`, heard, reply);
-		console.log(JSON.stringify({ bee: bee.id, reacted: n.reason, to: n.author.handle, said: reply }));
 		return "reacted";
 	}
 
@@ -272,7 +276,7 @@ export class BeeAgent extends DurableObject<Env> {
 				let outcome: string;
 				try {
 					if (TALK_REASONS.has(n.reason)) outcome = await this.talk(bee, s, toPost(n));
-					else if (REACTIONS[n.reason]) outcome = await this.react(bee, s, n);
+					else if (REACTIONS.has(n.reason)) outcome = await this.react(bee, s, n);
 					else outcome = `ignored ${n.reason}`;
 				} catch (e) {
 					// A post that cannot be answered (deleted, blocked) is skipped; losing access is not.
