@@ -10,6 +10,9 @@ interface Env {
 }
 
 const MAX_BODY = 64 * 1024;
+// Paths only llama.cpp's web UI requests. That UI was served here briefly and its service
+// worker can keep showing it; answering its requests this way makes the browser drop it.
+const OLD_UI = /^\/(?:props|models(?:\/.*)?|v1\/models|health|v1\/health|build\.json|tools|slots|cors-proxy|v1\/chat\/completions(?:\/.*)?|v1\/streams?(?:\/.*)?|manifest\.webmanifest|_app\/.*)$/;
 const models = new Map<string, Promise<BeeModel>>();
 
 function model(env: Env, file: string): Promise<BeeModel> {
@@ -27,6 +30,7 @@ const error = (status: number, message: string) => Response.json({ error: messag
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
+		if (OLD_UI.test(url.pathname)) return new Response(null, { status: 410, headers: { "Clear-Site-Data": '"cache", "storage"' } });
 		if (url.pathname !== "/api/buzz") return env.ASSETS.fetch(request);
 		if (request.method !== "POST") return error(405, "POST only");
 		const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
