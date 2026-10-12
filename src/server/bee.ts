@@ -13,11 +13,9 @@ const TOKEN_NORMAL = 1;
 const TOKEN_CONTROL = 3;
 const TOKEN_BYTE = 6;
 
+export type Sampling = { topK: number; topP: number; minP: number; temperature: number };
 // llama-server defaults: top_k 40 -> top_p 0.95 -> min_p 0.05 -> temperature 0.8.
-const TOP_K = 40;
-const TOP_P = 0.95;
-const MIN_P = 0.05;
-const TEMPERATURE = 0.8;
+export const LLAMA_SERVER_SAMPLING: Sampling = { topK: 40, topP: 0.95, minP: 0.05, temperature: 0.8 };
 export const MAX_PROMPT_TOKENS = 512;
 export const MAX_REPLY_TOKENS = 160;
 
@@ -69,6 +67,14 @@ function readGguf(buffer: ArrayBuffer) {
 	const tensors = new Map<string, Tensor>();
 	for (const t of infos) tensors.set(t.name, { dims: t.dims, offset: dataStart + t.offset });
 	return { meta, tensors };
+}
+
+function logProb(logits: Float32Array, id: number): number {
+	let max = -Infinity;
+	for (let i = 0; i < logits.length; i++) if (logits[i] > max) max = logits[i];
+	let sum = 0;
+	for (let i = 0; i < logits.length; i++) sum += Math.exp(logits[i] - max);
+	return logits[id] - max - Math.log(sum);
 }
 
 // y[t*nOut + o] = sum_i w[o*nIn + i] * x[t*nIn + i] for T rows of x.
@@ -136,7 +142,10 @@ export class BeeModel {
 	private readonly kCache: Float32Array[] = [];
 	private readonly vCache: Float32Array[] = [];
 
-	constructor(buffer: ArrayBuffer, ctx = MAX_PROMPT_TOKENS + MAX_REPLY_TOKENS) {
+	readonly sampling: Sampling;
+
+	constructor(buffer: ArrayBuffer, ctx = MAX_PROMPT_TOKENS + MAX_REPLY_TOKENS, sampling: Sampling = LLAMA_SERVER_SAMPLING) {
+		this.sampling = sampling;
 		const { meta, tensors } = readGguf(buffer);
 		if (meta.get("general.architecture") !== "llama") throw new Error("Expected a llama GGUF");
 		if (meta.get("tokenizer.ggml.model") !== "llama") throw new Error("Expected an SPM (llama) tokenizer");
@@ -364,17 +373,18 @@ export class BeeModel {
 	}
 
 	sample(logits: Float32Array, random: () => number): number {
-		const ids = Array.from(logits.keys()).sort((a, b) => logits[b] - logits[a]).slice(0, TOP_K);
+		const { topK, topP, minP, temperature } = this.sampling;
+		const ids = Array.from(logits.keys()).sort((a, b) => logits[b] - logits[a]).slice(0, topK);
 		const max = logits[ids[0]];
 		const p = ids.map((id) => Math.exp(logits[id] - max));
 		const z = p.reduce((a, b) => a + b, 0);
 		let keep = ids.length, cum = 0;
 		for (let i = 0; i < ids.length; i++) {
 			cum += p[i] / z;
-			if (cum >= TOP_P) { keep = i + 1; break; }
+			if (cum >= topP) { keep = i + 1; break; }
 		}
-		const kept = ids.slice(0, keep).filter((id) => logits[id] - max >= Math.log(MIN_P));
-		const w = kept.map((id) => Math.exp((logits[id] - max) / TEMPERATURE));
+		const kept = ids.slice(0, keep).filter((id) => logits[id] - max >= Math.log(minP));
+		const w = kept.map((id) => Math.exp((logits[id] - max) / temperature));
 		let r = random() * w.reduce((a, b) => a + b, 0);
 		for (let i = 0; i < kept.length; i++) {
 			r -= w[i];
@@ -383,20 +393,33 @@ export class BeeModel {
 		return kept[kept.length - 1];
 	}
 
-	private generate(prompt: number[], maxTokens: number, random: () => number): string {
-		let logits = this.forward(prompt, 0);
-		const out: number[] = [];
-		for (let pos = prompt.length; out.length < maxTokens; pos++) {
-			const id = this.sample(logits, random);
-			if (id === this.eos || this.tokenTypes[id] === TOKEN_CONTROL) break;
-			out.push(id);
-			logits = this.forward([id], pos);
+	// Samples `candidates` replies from one pass over the prompt and keeps the one the model
+	// finds most fluent: the highest mean log-probability per token, the end of reply included.
+	private generate(prompt: number[], maxTokens: number, random: () => number, candidates = 1): string {
+		const first = this.forward(prompt, 0);
+		let best = "", bestScore = -Infinity;
+		for (let c = 0; c < candidates; c++) {
+			let logits = first;
+			const out: number[] = [];
+			let logp = 0, steps = 0;
+			for (let pos = prompt.length; out.length < maxTokens; pos++) {
+				const id = this.sample(logits, random);
+				logp += logProb(logits, id);
+				steps++;
+				if (id === this.eos || this.tokenTypes[id] === TOKEN_CONTROL) break;
+				out.push(id);
+				logits = this.forward([id], pos);
+			}
+			if (logp / steps > bestScore) {
+				bestScore = logp / steps;
+				best = this.detokenize(out).trim();
+			}
 		}
-		return this.detokenize(out).trim();
+		return best;
 	}
 
-	reply(turns: BeeTurn[], random: () => number = Math.random, maxPromptTokens = MAX_PROMPT_TOKENS): string {
-		return this.generate(this.promptTokens(turns, maxPromptTokens), MAX_REPLY_TOKENS, random);
+	reply(turns: BeeTurn[], random: () => number = Math.random, maxPromptTokens = MAX_PROMPT_TOKENS, candidates = 1): string {
+		return this.generate(this.promptTokens(turns, maxPromptTokens), MAX_REPLY_TOKENS, random, candidates);
 	}
 
 	// For bees without a chat template: continue <s> + text, as llama.cpp's /completion does.

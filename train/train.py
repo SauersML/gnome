@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from gguf_io import Gguf
 from model import Bee
 
-MAX_LEN = 896
+MAX_LEN = int(os.environ.get("BEE_MAX_LEN", "896"))
 BATCH = 4  # micro-batch; ACCUMULATE of them make one optimizer step
 ACCUMULATE = 4
 WARMUP = 30
@@ -65,7 +65,7 @@ def held_out_loss(bee, convs, bos, device):
     bee.eval()
     total, count = 0.0, 0.0
     with torch.no_grad():
-        for ids, mask in batches([([bos] + c["ids"], [0] + c["mask"]) for c in convs], device):
+        for ids, mask in batches([([bos] + c["ids"][-(MAX_LEN - 1):], [0] + c["mask"][-(MAX_LEN - 1):]) for c in convs], device):
             loss, n = loss_of(bee, ids, mask)
             total += loss.item() * n.item()
             count += n.item()

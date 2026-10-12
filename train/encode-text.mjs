@@ -2,7 +2,7 @@
 // production tokenizer into a uint16 file, each document followed by </s>. Typographic quotes
 // and dashes become ASCII so they don't fall back to three byte tokens each.
 // Usage: node train/encode-text.mjs <base.gguf> <corpus.txt> <out.bin> <max MB of text>
-import { openSync, readFileSync, readSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, writeSync } from "node:fs";
 import { BeeModel } from "../src/server/bee.ts";
 
 const [gguf, corpus, out, maxMb] = process.argv.slice(2);
@@ -13,11 +13,18 @@ const raw = Buffer.alloc(bytes);
 const n = readSync(openSync(corpus, "r"), raw, 0, bytes, 0);
 const docs = raw.subarray(0, n).toString("utf8").split("<|endoftext|>").slice(0, -1);
 const ascii = (s) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-").replace(/…/g, "...").replace(/\s+/g, " ").trim();
-const ids = [];
+// Tokens are written in chunks so a large corpus never sits in one JavaScript array.
+const fd = openSync(out, "w");
+let pending = [], total = 0;
+const flush = () => { writeSync(fd, Buffer.from(new Uint16Array(pending).buffer)); total += pending.length; pending = []; };
 const t0 = Date.now();
 for (const doc of docs) {
 	const text = ascii(doc);
-	if (text) ids.push(...bee.tokenize(text), bee.eos);
+	if (!text) continue;
+	for (const id of bee.tokenize(text)) pending.push(id);
+	pending.push(bee.eos);
+	if (pending.length > 1 << 20) flush();
 }
-writeFileSync(out, Buffer.from(new Uint16Array(ids).buffer));
-console.log(`${docs.length} documents, ${ids.length} tokens (${(n / ids.length).toFixed(2)} bytes/token) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+flush();
+closeSync(fd);
+console.log(`${docs.length} documents, ${total} tokens (${(n / total).toFixed(2)} bytes/token) in ${((Date.now() - t0) / 1000).toFixed(0)} s`);

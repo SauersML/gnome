@@ -1,12 +1,12 @@
 // Samples a BeeLLM GGUF through the production engine on fixed probes and reports how often
 // each probe gets the intended mood, how often banned hedging appears, and example replies.
-// Usage: node train/probe.mjs <model.gguf> [samples per probe] [examples shown per probe]
+// Usage: node train/probe.mjs <model.gguf> [samples per probe] [examples shown per probe] [temperature] [candidates]
 import { readFileSync } from "node:fs";
-import { BeeModel } from "../src/server/bee.ts";
+import { BeeModel, LLAMA_SERVER_SAMPLING } from "../src/server/bee.ts";
 
-const [gguf, samplesArg = "12", shownArg = "3"] = process.argv.slice(2);
+const [gguf, samplesArg = "12", shownArg = "3", temperature = String(LLAMA_SERVER_SAMPLING.temperature), candidatesArg = "1"] = process.argv.slice(2);
 const buf = readFileSync(gguf);
-const bee = new BeeModel(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), 1200);
+const bee = new BeeModel(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), 1200, { ...LLAMA_SERVER_SAMPLING, temperature: Number(temperature) });
 const u = (content) => ({ role: "user", content });
 const b = (content) => ({ role: "bee", content });
 
@@ -38,7 +38,7 @@ const samples = Number(samplesArg), shown = Number(shownArg);
 let right = 0, scored = 0, hedges = 0, total = 0, replies = 0;
 const distinct = new Set();
 for (const [name, turns, moods] of PROBES) {
-	const outs = Array.from({ length: samples }, () => bee.reply(turns));
+	const outs = Array.from({ length: samples }, () => bee.reply(turns, Math.random, 512, Number(candidatesArg)));
 	for (const o of outs) { distinct.add(o); replies++; }
 	const moodOf = (s) => (s === "" ? "" : (s.match(/^\[([a-z]+):/)?.[1] ?? "none"));
 	const hits = moods ? outs.filter((s) => moods.includes(moodOf(s))).length : null;

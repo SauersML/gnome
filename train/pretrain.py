@@ -1,7 +1,9 @@
-"""Stage A: teaches BeeLLM 12M Mood English by continued pretraining on TinyStories, while a
-share of every batch is bee chat (train/encode.mjs output) so the chat format and her moods
-stay in use. Story windows train on every token; chats train on bee replies only.
-Usage: python train/pretrain.py <base.gguf> <text.bin> <valid.bin> <chat.json> <out dir> <million tokens> [lr] [chat share]
+"""Mixed training on TinyStories windows and bee chat (train/encode.mjs output). Story windows
+train on every token; chats train on bee replies only.
+Stage A teaches BeeLLM 12M Mood English with a small chat share so the chat format and her
+moods stay in use; stage B runs the same loop from stage A with a large chat share, so the
+stories keep her English while she becomes Scintilla.
+Usage: python train/pretrain.py <base.gguf> <text.bin> <valid.bin> <chat.json> <out dir> <million tokens> [lr] [chat share] [eval every]
 """
 import json
 import math
@@ -17,10 +19,12 @@ from gguf_io import Gguf
 from model import Bee
 from train import MAX_LEN, held_out_loss, loss_of, pack
 
-BATCH = 4
-ACCUMULATE = 8
+# Rows per micro-batch (memory) and micro-batches per step; a step is always 32 rows.
+BATCH = int(os.environ.get("BEE_BATCH", "4"))
+ACCUMULATE = 32 // BATCH
+# BEE_BF16=1 runs the forward and backward in bfloat16 autocast (weights stay float32).
+BF16 = os.environ.get("BEE_BF16") == "1"
 WARMUP = 200
-EVAL_EVERY = 250
 
 
 def story_rows(tokens: np.ndarray, rng: random.Random, n: int, bos: int):
@@ -44,6 +48,7 @@ def main():
     base, text, valid, chat, out, mtok = sys.argv[1:7]
     lr = float(sys.argv[7]) if len(sys.argv) > 7 else 6e-4
     chat_share = float(sys.argv[8]) if len(sys.argv) > 8 else 0.15
+    eval_every = int(sys.argv[9]) if len(sys.argv) > 9 else 250
     os.makedirs(out, exist_ok=True)
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     tokens = np.fromfile(text, dtype=np.uint16)
@@ -56,7 +61,8 @@ def main():
     valid_rows = story_rows(valid_tokens, random.Random(1), 48, bos)
     steps = int(float(mtok) * 1e6 / (BATCH * ACCUMULATE * MAX_LEN))
     opt = torch.optim.AdamW(bee.parameters(), lr=lr, betas=(0.9, 0.95), weight_decay=0.1)
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1, (s + 1) / WARMUP) * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * min(s, steps) / steps))))
+    warmup = min(WARMUP, max(1, steps // 10))
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: min(1, (s + 1) / warmup) * (0.1 + 0.9 * 0.5 * (1 + math.cos(math.pi * min(s, steps) / steps))))
     chats = []
 
     def story_loss():
@@ -69,7 +75,7 @@ def main():
     log = []
     t0 = time.time()
     for step in range(steps + 1):
-        if step % EVAL_EVERY == 0 or step == steps:
+        if step % eval_every == 0 or step == steps:
             entry = {"step": step, "tokens_m": round(step * BATCH * ACCUMULATE * MAX_LEN / 1e6, 1), "story": round(story_loss(), 3),
                      "chat_held_out": round(held_out_loss(bee, data["val"], bos, device), 3), "minutes": round((time.time() - t0) / 60, 1)}
             log.append(entry)
@@ -88,7 +94,8 @@ def main():
                     rows.append(chats.pop())
                 else:
                     rows.extend(story_rows(tokens, rng, 1, bos))
-            loss, _ = loss_of(bee, *to_batch(rows, device))
+            with torch.autocast(device_type=device, dtype=torch.bfloat16, enabled=BF16):
+                loss, _ = loss_of(bee, *to_batch(rows, device))
             (loss / ACCUMULATE).backward()
         torch.nn.utils.clip_grad_norm_(bee.parameters(), 1.0)
         opt.step()
