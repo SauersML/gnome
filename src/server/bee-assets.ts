@@ -3,7 +3,8 @@ import { BeeModel } from "./bee";
 type Manifest = { bytes: number; parts: string[] };
 
 // Loads a BeeLLM GGUF written by scripts/fetch-bee.mjs from static assets.
-export async function loadBee(assets: Fetcher, file: string): Promise<BeeModel> {
+// ctx is the number of positions to keep in the KV cache (prompt plus reply).
+export async function loadBee(assets: Fetcher, file: string, ctx?: number): Promise<BeeModel> {
 	const get = (path: string) => assets.fetch(new Request(new URL(`/bee/${path}`, "https://assets.local")));
 	const res = await get(`${file}.json`);
 	if (!res.ok) throw new Error(`${file} manifest HTTP ${res.status}`);
@@ -21,5 +22,5 @@ export async function loadBee(assets: Fetcher, file: string): Promise<BeeModel> 
 		}
 	}
 	if (offset !== manifest.bytes) throw new Error(`${file} is ${offset} bytes, expected ${manifest.bytes}`);
-	return new BeeModel(bytes.buffer);
+	return new BeeModel(bytes.buffer, ctx);
 }

@@ -17,6 +17,12 @@
 		"bindings": [{ "class_name": "BeeAgent", "name": "AGENT" }]
 	},
 	"migrations": [{ "new_sqlite_classes": ["BeeAgent"], "tag": "v1" }],
+	"ai": {
+		"binding": "AI"
+	},
+	"limits": {
+		"cpu_ms": 120000
+	},
 	"observability": {
 		"enabled": true
 	}

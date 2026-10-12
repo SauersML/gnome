@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { beeScore, cleanForBee, threadTurns, allowedToSpeak, pickAmbient, replyRef, postText, LIMITS, MIN_BEE_SCORE } from '../town/src/town.ts';
+import { beeScore, cleanForBee, threadTurns, withMemory, allowedToSpeak, rankAmbient, replyRef, postText, mentionPost, cosine, meanVector, LIMITS, MIN_BEE_SCORE, MIN_BEE_SIMILARITY } from '../town/src/town.ts';
 
 const self = { did: 'did:plc:me', handle: 'scintilla.delve.town', name: 'scintilla' };
 const now = Date.parse('2026-10-12T08:00:00Z');
@@ -38,21 +38,46 @@ test('limits stop a bee from flooding a thread, an author, or the town', () => {
   assert.equal(allowedToSpeak(recent, now + 2 * 3600_000, 'r', 'new'), true);
 });
 
-test('the ambient pick is the most bee-related fresh post outside her busy threads', () => {
-  const best = post({ text: 'honey bees and their hive 🐝', uri: 'best' });
+test('the ambient pick is the most bee-like fresh post by meaning or words, outside her busy threads', () => {
   const posts = [
     post({ text: 'bees', uri: 'plain' }),
-    best,
+    post({ text: 'the garden hums all afternoon', uri: 'by-meaning' }),
+    post({ text: 'honey bees and their hive', uri: 'by-words' }),
     post({ text: 'bees bees bees bees', uri: 'mine', authorDid: self.did }),
     post({ text: 'bees bees bees bees', uri: 'other-bee', handle: 'melissa.delve.town' }),
     post({ text: 'bees bees bees bees', uri: 'old', createdAt: '2026-10-01T00:00:00Z' }),
     post({ text: 'bees bees bees bees', uri: 'done' }),
     post({ text: 'bees bees bees bees', uri: 'busy', root: { uri: 'root-busy', cid: 'c' } }),
-    post({ text: 'flowers', uri: 'weak' }),
+    post({ text: 'tax forms', uri: 'unrelated' }),
   ];
-  const pick = pickAmbient(posts, { self: self.did, bees: new Set(['melissa.delve.town']), handled: (u) => u === 'done', spoken: [{ at: now - 3600_000, root: 'root-busy', author: 'x' }], now });
-  assert.equal(pick.uri, 'best');
-  assert.deepEqual(replyRef(best), { root: { uri: 'best', cid: 'c' }, parent: { uri: 'best', cid: 'c' } });
+  const similarity = new Map([['by-meaning', 0.8], ['by-words', 0.6], ['plain', 0.5], ['unrelated', 0.2]]);
+  const ranked = rankAmbient(posts, similarity, { self: self.did, bees: new Set(['melissa.delve.town']), handled: (u) => u === 'done', spoken: [{ at: now - 3600_000, root: 'root-busy', author: 'x' }], now });
+  assert.deepEqual(ranked.map((c) => c.uri), ['by-meaning', 'by-words', 'plain']);
+  assert.ok(0.8 >= MIN_BEE_SIMILARITY);
+  assert.deepEqual(replyRef(posts[1]), { root: { uri: 'by-meaning', cid: 'c' }, parent: { uri: 'by-meaning', cid: 'c' } });
+});
+
+test('her memory of other conversations comes before the conversation at hand', () => {
+  const memory = [
+    { role: 'user', content: '*throws a tomato*', root: 'a' },
+    { role: 'bee', content: '[angry:high] BZZT', root: 'a' },
+    { role: 'user', content: 'old words in this thread', root: 'b' },
+    { role: 'bee', content: 'old reply in this thread', root: 'b' },
+  ];
+  assert.deepEqual(withMemory(memory, 'b', [{ role: 'user', content: 'hi bee' }]), [
+    { role: 'user', content: '*throws a tomato*' },
+    { role: 'bee', content: '[angry:high] BZZT' },
+    { role: 'user', content: 'hi bee' },
+  ]);
+});
+
+test('a mention post tags the person with a facet covering the handle', () => {
+  const m = mentionPost('sauers.delve.town', 'did:plc:s', '[happy:high] bzz');
+  assert.equal(m.text, '@sauers.delve.town [happy:high] bzz');
+  assert.deepEqual(m.facets[0].index, { byteStart: 0, byteEnd: 18 });
+  assert.equal(m.facets[0].features[0].did, 'did:plc:s');
+  assert.ok(Math.abs(cosine([1, 0], [1, 0]) - 1) < 1e-12 && cosine([1, 0], [0, 1]) === 0);
+  assert.deepEqual(meanVector([[1, 3], [3, 5]]), [2, 4]);
 });
 
 test('posts stay within the town length limit', () => {
