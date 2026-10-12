@@ -17,7 +17,9 @@ const TOKEN_BYTE = 6;
 // repeatLastN tokens of the reply, as llama.cpp's repeat_penalty does; 1 turns it off.
 // loopLimit ends a reply once a pattern of 1-4 tokens has repeated that many times in a row,
 // keeping four repeats; unset means replies end only at </s> or the length limit.
-export type Sampling = { topK: number; topP: number; minP: number; temperature: number; repeatPenalty?: number; repeatLastN?: number; loopLimit?: number };
+// firstTemperature, when set, samples a reply's first token (a Mood bee's [mood:level] tag) at
+// that temperature and the rest at `temperature`.
+export type Sampling = { topK: number; topP: number; minP: number; temperature: number; repeatPenalty?: number; repeatLastN?: number; loopLimit?: number; firstTemperature?: number };
 
 // Number of trailing tokens to drop when the end of `ids` repeats a 1-4 token pattern `limit`
 // times in a row (all but four repeats), or 0.
@@ -394,8 +396,8 @@ export class BeeModel {
 		return logits;
 	}
 
-	sample(logits: Float32Array, random: () => number, recent: number[] = []): number {
-		const { topK, topP, minP, temperature, repeatPenalty = 1, repeatLastN = 64 } = this.sampling;
+	sample(logits: Float32Array, random: () => number, recent: number[] = [], temperature = this.sampling.temperature): number {
+		const { topK, topP, minP, repeatPenalty = 1, repeatLastN = 64 } = this.sampling;
 		if (repeatPenalty !== 1 && recent.length) {
 			logits = logits.slice();
 			for (const id of new Set(recent.slice(-repeatLastN))) logits[id] = logits[id] > 0 ? logits[id] / repeatPenalty : logits[id] * repeatPenalty;
@@ -443,7 +445,7 @@ export class BeeModel {
 			const out: number[] = [];
 			let logp = 0, steps = 0;
 			for (let pos = prompt.length; out.length < maxTokens; pos++) {
-				const id = this.sample(logits, random, out);
+				const id = this.sample(logits, random, out, out.length === 0 ? this.sampling.firstTemperature ?? this.sampling.temperature : this.sampling.temperature);
 				logp += logProb(logits, id);
 				steps++;
 				if (id === this.eos || this.tokenTypes[id] === TOKEN_CONTROL) break;
