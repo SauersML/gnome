@@ -20,10 +20,15 @@ const LLAMA_CPP_CHAT = [
 const LLAMA_CPP_CHAT_IDS = [1, 3, 1991, 539, 271, 1991, 4, 2010, 279, 2009, 284, 2011, 267, 301, 293, 1991, 327, 291, 2, 3, 983, 4];
 const LLAMA_CPP_TOP_LOGPROBS = [[2010, -0.01208], [2, -4.42223], [410, -14.61032], [283, -15.10869], [267, -15.27159]];
 
-// The original BeeLLM 12M Mood, fetched into .bee-cache by the pretest script.
-const manifest = JSON.parse(readFileSync(new URL('../.bee-cache/bee/BeeLLM-12M-Mood.gguf.json', import.meta.url), 'utf8'));
-const weights = Buffer.concat(manifest.parts.map(part => readFileSync(new URL(`../.bee-cache/bee/${part}`, import.meta.url))));
-const bee = new BeeModel(weights.buffer.slice(weights.byteOffset, weights.byteOffset + weights.byteLength));
+// A bee the pretest script fetched into <dir>/bee/.
+function loadBee(dir, model) {
+  const manifest = JSON.parse(readFileSync(new URL(`../${dir}/bee/${model}.gguf.json`, import.meta.url), 'utf8'));
+  const weights = Buffer.concat(manifest.parts.map(part => readFileSync(new URL(`../${dir}/bee/${part}`, import.meta.url))));
+  return new BeeModel(weights.buffer.slice(weights.byteOffset, weights.byteOffset + weights.byteLength));
+}
+
+// The original BeeLLM 12M Mood.
+const bee = loadBee('.bee-cache', 'BeeLLM-12M-Mood');
 
 test('the tokenizer reproduces llama.cpp exactly, and typed text cannot form control tokens', () => {
   for (const [text, ids] of Object.entries(LLAMA_CPP_TOKENS)) {
@@ -64,10 +69,15 @@ const MELLIFERA_TOKENS = {
 const MELLIFERA_CHAT_IDS = [1, 3, 2378, 271, 1991, 4, 2098, 4103, 4109, 4221, 339, 2, 3, 983, 4];
 const MELLIFERA_TOP_LOGPROBS = [[2081, -0.00243], [2088, -7.01464], [2076, -8.47058], [2214, -9.24656], [2098, -9.49681]];
 
+const mellifera = loadBee('town/public', 'BeeLLM-13M-Mellifera');
+const logProbs = (logits) => {
+  const max = Math.max(...logits);
+  const logZ = max + Math.log(logits.reduce((a, l) => a + Math.exp(l - max), 0));
+  return logits.map(l => l - logZ);
+};
+
 test('Mellifera tokenizes and predicts as llama.cpp does', () => {
-  const m = JSON.parse(readFileSync(new URL('../town/public/bee/BeeLLM-13M-Mellifera.gguf.json', import.meta.url), 'utf8'));
-  const w = Buffer.concat(m.parts.map(p => readFileSync(new URL(`../town/public/bee/${p}`, import.meta.url))));
-  const s = new BeeModel(w.buffer.slice(w.byteOffset, w.byteOffset + w.byteLength));
+  const s = mellifera;
   assert.equal(s.nVocab, 4608);
   for (const [text, ids] of Object.entries(MELLIFERA_TOKENS)) assert.deepEqual(s.tokenize(text), ids, text);
   assert.deepEqual(s.promptTokens([{ role: 'user', content: '*swats you*' }, { role: 'bee', content: '[angry:high] *STINGS YOU* BZZZZZZT!!!' }, { role: 'user', content: 'sorry' }]), MELLIFERA_CHAT_IDS);
@@ -75,6 +85,28 @@ test('Mellifera tokenizes and predicts as llama.cpp does', () => {
   const max = Math.max(...logits);
   const logZ = max + Math.log(logits.reduce((a, l) => a + Math.exp(l - max), 0));
   for (const [id, lp] of MELLIFERA_TOP_LOGPROBS) assert.ok(Math.abs(logits[id] - logZ - lp) < 5e-3, `token ${id}`);
+});
+
+// Mellifera quantized to Q8_0 by train/quantize.py (its bytes match llama-quantize's). The
+// references are llama.cpp's for the same weights dequantized to F32: llama.cpp's own Q8_0 CPU
+// path also rounds activations to Q8_0, which moves these by up to 0.1.
+const MELLIFERA_Q8_TOP_LOGPROBS = [[2081, -0.00236], [2088, -7.05817], [2076, -8.44467], [2214, -9.28309], [2098, -9.55962]];
+
+test('Mellifera in Q8_0 predicts as llama.cpp does on the same weights, and greedily as in F32', () => {
+  const q8 = loadBee('.bee-cache', 'BeeLLM-13M-Mellifera-Q8_0');
+  const lp = logProbs(q8.forward(MELLIFERA_CHAT_IDS, 0));
+  for (const [id, want] of MELLIFERA_Q8_TOP_LOGPROBS) assert.ok(Math.abs(lp[id] - want) < 5e-3, `token ${id}`);
+  for (const text of ['hi bee!', '*throws the tomato at you*', 'are you conscious?']) {
+    const prompt = mellifera.promptTokens([{ role: 'user', content: text }]);
+    let a = mellifera.forward(prompt, 0), b = q8.forward(prompt, 0);
+    for (let pos = prompt.length; pos < prompt.length + 24; pos++) {
+      const next = a.indexOf(Math.max(...a));
+      assert.equal(b.indexOf(Math.max(...b)), next, `${text} at ${pos}`);
+      if (next === mellifera.eos) break;
+      a = mellifera.forward([next], pos);
+      b = q8.forward([next], pos);
+    }
+  }
 });
 
 test('the loop cap trims a runaway pattern to four repeats and leaves short stutters alone', () => {

@@ -2,6 +2,7 @@
 
 Writing copies the original file byte for byte and replaces only tensor data, so the
 metadata, tokenizer and layout stay exactly as llama.cpp and the Worker engine expect.
+write_new can also store chosen tensors as Q8_0 (quantize.py).
 """
 import struct
 
@@ -9,6 +10,21 @@ import numpy as np
 
 _SCALARS = {0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f", 7: "?", 10: "Q", 11: "q", 12: "d"}
 _ALIGN = 32
+GGML_TYPE_Q8_0 = 8
+QK8_0 = 32  # weights per Q8_0 block: an f16 scale, then 32 int8
+
+
+def quantize_q8_0(x: np.ndarray) -> bytes:
+    """llama.cpp's quantize_row_q8_0_ref: per block of 32 weights the scale d = max|x|/127 and
+    int8 round(x/d), rounding half away from zero, so the bytes match llama-quantize's."""
+    blocks = np.ascontiguousarray(x, dtype="<f4").reshape(-1, QK8_0)
+    d = np.abs(blocks).max(axis=1) / np.float32(127)
+    inv = np.divide(np.float32(1), d, out=np.zeros_like(d), where=d != 0)
+    scaled = (blocks * inv[:, None]).astype(np.float64)  # adding 0.5 is exact in f64
+    out = np.empty(len(blocks), dtype=[("d", "<f2"), ("qs", "i1", QK8_0)])
+    out["d"] = d.astype("<f2")
+    out["qs"] = np.trunc(scaled + np.copysign(0.5, scaled))
+    return out.tobytes()
 
 
 class Gguf:
@@ -63,9 +79,10 @@ class Gguf:
         offset, shape = self.tensors[name]
         return np.frombuffer(self.data, dtype="<f4", count=int(np.prod(shape)), offset=offset).reshape(shape).copy()
 
-    def write_new(self, path: str, meta: dict, tensors: dict[str, np.ndarray]) -> None:
+    def write_new(self, path: str, meta: dict, tensors: dict[str, np.ndarray], q8: frozenset[str] = frozenset()) -> None:
         """Writes a fresh GGUF with this file's keys (values replaced from `meta`) and the given
-        tensors in this file's tensor order; shapes may differ (a grown vocabulary)."""
+        tensors in this file's tensor order; shapes may differ (a grown vocabulary). Tensors
+        named in `q8` are stored as Q8_0."""
         out = bytearray(b"GGUF" + struct.pack("<IQQ", 3, len(self.tensors), len(self.meta)))
 
         def put_str(s: str):
@@ -87,19 +104,25 @@ class Gguf:
             put_str(key)
             out.extend(struct.pack("<I", t))
             put_value(t, meta.get(key, value), et)
-        arrays, offset = [], 0
+        blobs, offset = [], 0
         for name in self.tensors:
             arr = np.ascontiguousarray(tensors[name], dtype="<f4")
             put_str(name)
             dims = list(reversed(arr.shape))
             out.extend(struct.pack("<I", len(dims)) + b"".join(struct.pack("<Q", d) for d in dims))
-            out.extend(struct.pack("<IQ", 0, offset))
-            arrays.append(arr)
-            offset += (arr.nbytes + _ALIGN - 1) // _ALIGN * _ALIGN
+            if name in q8:
+                if dims[0] % QK8_0:
+                    raise ValueError(f"{name}: rows of {dims[0]} are not whole Q8_0 blocks")
+                blob = quantize_q8_0(arr)
+            else:
+                blob = arr.tobytes()
+            out.extend(struct.pack("<IQ", GGML_TYPE_Q8_0 if name in q8 else 0, offset))
+            blobs.append(blob)
+            offset += (len(blob) + _ALIGN - 1) // _ALIGN * _ALIGN
         out.extend(b"\0" * ((-len(out)) % _ALIGN))
-        for arr in arrays:
-            out.extend(arr.tobytes())
-            out.extend(b"\0" * ((-arr.nbytes) % _ALIGN))
+        for blob in blobs:
+            out.extend(blob)
+            out.extend(b"\0" * ((-len(blob)) % _ALIGN))
         with open(path, "wb") as f:
             f.write(out)
 

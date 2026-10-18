@@ -17,6 +17,8 @@ const PINS = {
 	"BeeLLM-30P": { bytes: 49504, sha256: "e5987a9ac3f66281bf60d886f280db1e5adc04bd8a89468232f6692a16e70bf8" },
 	// Mellifera: post-trained from BeeLLM-12M-Mood by train/ (vocabulary grown to 4,096 tokens).
 	"BeeLLM-13M-Mellifera": { bytes: 54519872, sha256: "a3e449bda8f79c69cfcfffd9e2fd4420211892e0bf07121a581ca1720a62027d", local: true },
+	// Mellifera in Q8_0 (train/quantize.py), for the engine's Q8_0 test.
+	"BeeLLM-13M-Mellifera-Q8_0": { bytes: 14573632, sha256: "15f2b898fa95fd8ff17fee93f63b77782bdbe7a17442b1156f7bcff996f5abc4", local: true },
 };
 const PART_BYTES = 24 * 1024 * 1024;
 

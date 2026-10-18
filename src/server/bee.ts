@@ -1,14 +1,20 @@
 // BeeLLM (https://huggingface.co/schizophyllume/BeeLLM) run directly in the Worker: a GGUF
-// reader, llama.cpp's SPM tokenizer, the llama forward pass in F32, and llama-server's
-// default sampler chain. The Mood bees chat through <|user|>/<|bee|> turns; the tiny bees
-// (30P, 42P, 42P Chaos) have no chat template and continue raw buzzing.
+// reader, llama.cpp's SPM tokenizer, the llama forward pass in F32 (matrices F32 or Q8_0),
+// and llama-server's default sampler chain. The Mood bees chat through <|user|>/<|bee|>
+// turns; the tiny bees (30P, 42P, 42P Chaos) have no chat template and continue raw buzzing.
 
 export type BeeTurn = { role: "user" | "bee"; content: string };
 
-type Tensor = { dims: number[]; offset: number };
+type Tensor = { dims: number[]; type: number; offset: number };
+// A Q8_0 matrix as the file's bytes: block k (32 weights along a row) is an f16 scale then 32
+// int8 at q[k*34 + 2..]; its scale, decoded once, is d[k].
+type Q8 = { q: Int8Array; d: Float32Array };
+type Weight = Float32Array | Q8;
 
 const GGUF_MAGIC = 0x46554747; // "GGUF"
 const GGML_TYPE_F32 = 0;
+const GGML_TYPE_Q8_0 = 8;
+const QK8_0 = 32;
 const TOKEN_NORMAL = 1;
 const TOKEN_CONTROL = 3;
 const TOKEN_BYTE = 6;
@@ -76,20 +82,20 @@ function readGguf(buffer: ArrayBuffer) {
 	const nKv = u64();
 	const meta = new Map<string, unknown>();
 	for (let i = 0; i < nKv; i++) { const key = str(); meta.set(key, value(u32())); }
-	const infos: { name: string; dims: number[]; offset: number }[] = [];
+	const infos: { name: string; dims: number[]; type: number; offset: number }[] = [];
 	for (let i = 0; i < nTensors; i++) {
 		const name = str();
 		const nd = u32();
 		const dims: number[] = [];
 		for (let d = 0; d < nd; d++) dims.push(u64());
 		const type = u32();
-		if (type !== GGML_TYPE_F32) throw new Error(`Tensor ${name} is type ${type}; only F32 is supported`);
-		infos.push({ name, dims, offset: u64() });
+		if (type !== GGML_TYPE_F32 && type !== GGML_TYPE_Q8_0) throw new Error(`Tensor ${name} is type ${type}; only F32 and Q8_0 are supported`);
+		infos.push({ name, dims, type, offset: u64() });
 	}
 	const alignment = (meta.get("general.alignment") as number | undefined) ?? 32;
 	const dataStart = Math.ceil(pos / alignment) * alignment;
 	const tensors = new Map<string, Tensor>();
-	for (const t of infos) tensors.set(t.name, { dims: t.dims, offset: dataStart + t.offset });
+	for (const t of infos) tensors.set(t.name, { dims: t.dims, type: t.type, offset: dataStart + t.offset });
 	return { meta, tensors };
 }
 
@@ -101,8 +107,21 @@ function logProb(logits: Float32Array, id: number): number {
 	return logits[id] - max - Math.log(sum);
 }
 
+// The value of an f16 given its 16 bits.
+function f16(h: number): number {
+	const e = (h >> 10) & 31, m = h & 1023, sign = h & 0x8000 ? -1 : 1;
+	if (e === 0) return sign * m * 2 ** -24;
+	if (e === 31) return m ? NaN : sign * Infinity;
+	return sign * (1024 + m) * 2 ** (e - 25);
+}
+
 // y[t*nOut + o] = sum_i w[o*nIn + i] * x[t*nIn + i] for T rows of x.
-function matmul(y: Float32Array, x: Float32Array, w: Float32Array, T: number, nIn: number, nOut: number) {
+function matmul(y: Float32Array, x: Float32Array, w: Weight, T: number, nIn: number, nOut: number) {
+	if (w instanceof Float32Array) matmulF32(y, x, w, T, nIn, nOut);
+	else matmulQ8(y, x, w, T, nIn, nOut);
+}
+
+function matmulF32(y: Float32Array, x: Float32Array, w: Float32Array, T: number, nIn: number, nOut: number) {
 	for (let o = 0; o < nOut; o++) {
 		const wo = o * nIn;
 		for (let t = 0; t < T; t++) {
@@ -121,6 +140,43 @@ function matmul(y: Float32Array, x: Float32Array, w: Float32Array, T: number, nI
 	}
 }
 
+// Each 32-weight block is its scale times int8 weights, applied to F32 x: the exact product with
+// the dequantized matrix, as llama.cpp computes it on GPUs. (Its CPU backend also rounds x to
+// Q8_0, which moves low log-probabilities by up to about 0.1.)
+function matmulQ8(y: Float32Array, x: Float32Array, w: Q8, T: number, nIn: number, nOut: number) {
+	const { q, d } = w, nb = nIn / QK8_0;
+	for (let o = 0; o < nOut; o++) {
+		for (let t = 0; t < T; t++) {
+			let s = 0;
+			for (let b = 0; b < nb; b++) {
+				const k = o * nb + b, qo = k * 34 + 2, xo = t * nIn + b * QK8_0;
+				let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+				for (let i = 0; i < QK8_0; i += 4) {
+					s0 += q[qo + i] * x[xo + i];
+					s1 += q[qo + i + 1] * x[xo + i + 1];
+					s2 += q[qo + i + 2] * x[xo + i + 2];
+					s3 += q[qo + i + 3] * x[xo + i + 3];
+				}
+				s += d[k] * (s0 + s1 + s2 + s3);
+			}
+			y[t * nOut + o] = s;
+		}
+	}
+}
+
+// Copies row `row` of an n-wide matrix (an embedding) into out at `at`.
+function copyRow(out: Float32Array, at: number, w: Weight, row: number, n: number) {
+	if (w instanceof Float32Array) {
+		out.set(w.subarray(row * n, row * n + n), at);
+		return;
+	}
+	const nb = n / QK8_0;
+	for (let b = 0; b < nb; b++) {
+		const k = row * nb + b, qo = k * 34 + 2;
+		for (let i = 0; i < QK8_0; i++) out[at + b * QK8_0 + i] = w.d[k] * w.q[qo + i];
+	}
+}
+
 function rmsNorm(out: Float32Array, x: Float32Array, weight: Float32Array, T: number, n: number, eps: number) {
 	for (let t = 0; t < T; t++) {
 		const o = t * n;
@@ -132,8 +188,8 @@ function rmsNorm(out: Float32Array, x: Float32Array, weight: Float32Array, T: nu
 }
 
 type Layer = {
-	attnNorm: Float32Array; q: Float32Array; k: Float32Array; v: Float32Array; o: Float32Array;
-	ffnNorm: Float32Array; gate: Float32Array; up: Float32Array; down: Float32Array;
+	attnNorm: Float32Array; q: Weight; k: Weight; v: Weight; o: Weight;
+	ffnNorm: Float32Array; gate: Weight; up: Weight; down: Weight;
 };
 
 export class BeeModel {
@@ -156,9 +212,9 @@ export class BeeModel {
 	private readonly tokenTypes: number[];
 	private readonly mergeable = new Map<string, { id: number; score: number }>();
 	private readonly byteTokens: number[] = [];
-	private readonly embd: Float32Array;
+	private readonly embd: Weight;
 	private readonly outNorm: Float32Array;
-	private readonly output: Float32Array;
+	private readonly output: Weight;
 	private readonly layers: Layer[] = [];
 	private readonly ropeCos: Float32Array;
 	private readonly ropeSin: Float32Array;
@@ -201,24 +257,38 @@ export class BeeModel {
 		this.chat = this.userToken >= 0 && this.beeToken >= 0;
 		if (this.byteTokens.filter((id) => id !== undefined).length !== 256) throw new Error("Missing byte-fallback tokens");
 
-		const f32 = (name: string, ...dims: number[]) => {
+		const tensor = (name: string, dims: number[]) => {
 			const t = tensors.get(name);
 			if (!t || t.dims.join() !== dims.join()) throw new Error(`Tensor ${name} has dims ${t?.dims} instead of ${dims}`);
-			return new Float32Array(buffer, t.offset, dims.reduce((a, b) => a * b, 1));
+			return { ...t, n: dims.reduce((a, b) => a * b, 1) };
+		};
+		const f32 = (name: string, ...dims: number[]) => {
+			const t = tensor(name, dims);
+			if (t.type !== GGML_TYPE_F32) throw new Error(`Tensor ${name} must be F32`);
+			return new Float32Array(buffer, t.offset, t.n);
+		};
+		// Matrices may be Q8_0 (train/quantize.py): views on the file's bytes plus decoded scales.
+		const weight = (name: string, ...dims: number[]): Weight => {
+			const t = tensor(name, dims);
+			if (t.type === GGML_TYPE_F32) return new Float32Array(buffer, t.offset, t.n);
+			if (dims[0] % QK8_0) throw new Error(`Tensor ${name} rows are not whole Q8_0 blocks`);
+			const blocks = t.n / QK8_0, view = new DataView(buffer, t.offset, blocks * 34), d = new Float32Array(blocks);
+			for (let k = 0; k < blocks; k++) d[k] = f16(view.getUint16(k * 34, true));
+			return { q: new Int8Array(buffer, t.offset, blocks * 34), d };
 		};
 		const d = this.nEmbd;
-		this.embd = f32("token_embd.weight", d, this.nVocab);
+		this.embd = weight("token_embd.weight", d, this.nVocab);
 		this.outNorm = f32("output_norm.weight", d);
-		this.output = f32("output.weight", d, this.nVocab);
+		this.output = weight("output.weight", d, this.nVocab);
 		for (let l = 0; l < this.nLayer; l++) {
 			const p = `blk.${l}.`;
 			this.layers.push({
 				attnNorm: f32(`${p}attn_norm.weight`, d),
-				q: f32(`${p}attn_q.weight`, d, d), k: f32(`${p}attn_k.weight`, d, d),
-				v: f32(`${p}attn_v.weight`, d, d), o: f32(`${p}attn_output.weight`, d, d),
+				q: weight(`${p}attn_q.weight`, d, d), k: weight(`${p}attn_k.weight`, d, d),
+				v: weight(`${p}attn_v.weight`, d, d), o: weight(`${p}attn_output.weight`, d, d),
 				ffnNorm: f32(`${p}ffn_norm.weight`, d),
-				gate: f32(`${p}ffn_gate.weight`, d, this.nFf), up: f32(`${p}ffn_up.weight`, d, this.nFf),
-				down: f32(`${p}ffn_down.weight`, this.nFf, d),
+				gate: weight(`${p}ffn_gate.weight`, d, this.nFf), up: weight(`${p}ffn_up.weight`, d, this.nFf),
+				down: weight(`${p}ffn_down.weight`, this.nFf, d),
 			});
 			this.kCache.push(new Float32Array(ctx * d));
 			this.vCache.push(new Float32Array(ctx * d));
@@ -338,7 +408,7 @@ export class BeeModel {
 		const u = new Float32Array(T * ff);
 		const scores = new Float32Array(pos0 + T);
 		const scale = 1 / Math.sqrt(hd);
-		for (let t = 0; t < T; t++) x.set(this.embd.subarray(ids[t] * d, ids[t] * d + d), t * d);
+		for (let t = 0; t < T; t++) copyRow(x, t * d, this.embd, ids[t], d);
 		for (let l = 0; l < this.nLayer; l++) {
 			const L = this.layers[l], kc = this.kCache[l], vc = this.vCache[l];
 			rmsNorm(h, x, L.attnNorm, T, d, this.eps);
