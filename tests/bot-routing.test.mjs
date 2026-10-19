@@ -14,14 +14,21 @@ const bundle = await build({
     build.onResolve({ filter: /^partyserver$/ }, () => ({ path: 'partyserver', namespace: 'stub' }));
     build.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: `
       export class Server {
-        constructor() { this.env = { OPENROUTER_API_KEY: 'test-only' }; this.events = []; this.ctx = { storage: { sql: { exec() {} } } }; }
+        constructor() {
+          this.env = { OPENROUTER_API_KEY: 'test-only' }; this.events = [];
+          const kv = new Map();
+          this.ctx = { storage: { sql: { exec(query, ...args) {
+            if (/INSERT INTO kv/.test(query)) kv.set(args[0], args[1]);
+            return { toArray: () => /SELECT value FROM kv/.test(query) && kv.has(args[0]) ? [{ value: kv.get(args[0]) }] : [] };
+          } } } };
+        }
         broadcast(value) { this.events.push(JSON.parse(value)); }
       }
       export async function routePartykitRequest() { return null; }
     ` }));
   } }],
 });
-const { Chat, CogitoRelay } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+const { Chat, CogitoRelay, sanitizeCss, staysScoped, default: worker } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 const browser = { async newPage() { return {
   async goto() { return { ok: () => true }; },
   locator() { return { async waitFor() {} }; },
@@ -176,7 +183,7 @@ test('the bee gets only her own conversation, without @, and never touches the L
   ]);
   assert.equal(chat.messages.at(-1).user, 'Bee');
   assert.equal(chat.messages.at(-1).content, '[happy:high] *hugs the flower*');
-  assert.equal(chat.dailyCalls, 0);
+  assert.deepEqual(chat.budget('bots'), { calls: 0, dollars: 0 });
 });
 
 test('a silent bee posts nothing and a failed bee posts only the generic error', async () => {
@@ -189,4 +196,58 @@ test('a silent bee posts nothing and a failed bee posts only the generic error',
   await chat.sendBeeReply();
   assert.match(chat.messages.at(-1).content, /^Bee couldn't respond right now/);
   assert.doesNotMatch(JSON.stringify(chat.events), /private stack detail/);
+});
+
+test('the daily bot budget lives in storage, so an evicted chat cannot start the day over', async t => {
+  const chat = new Chat();
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    calls++;
+    assert.deepEqual(JSON.parse(init.body).usage, { include: true });
+    return Response.json({ choices: [{ message: { content: 'Hello.' } }], usage: { cost: 1.5 } });
+  });
+  await chat.sendBotReply('Claude', CLAUDE_MODEL, 'Chat here.');
+  const revived = new Chat();
+  revived.ctx = chat.ctx;
+  assert.deepEqual(revived.budget('bots'), { calls: 1, dollars: 1.5 });
+  await revived.sendBotReply('Claude', CLAUDE_MODEL, 'Chat here.');
+  await revived.sendBotReply('Claude', CLAUDE_MODEL, 'Chat here.');
+  assert.equal(calls, 2);
+});
+
+test('Haiku moderation drops a flood past its minute and falls back to the word filter past its day', async t => {
+  const chat = new Chat();
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => (calls++, Response.json({ choices: [{ message: { content: 'ALLOW' } }], usage: { cost: 0.0001 } })));
+  for (let i = 0; i < 30; i++) assert.equal(await chat.moderateWithHaiku('hi', 'visitor'), true);
+  assert.equal(await chat.moderateWithHaiku('hi', 'visitor'), false);
+  assert.equal(calls, 30);
+  chat.moderationTimestamps = [];
+  chat.charge('moderation', 0, 0.5);
+  assert.equal(await chat.moderateWithHaiku('hi', 'visitor'), true);
+  assert.equal(calls, 30);
+});
+
+test('only the site\'s one chat room can be reached', async () => {
+  const env = { ASSETS: { fetch: () => new Response('passed on') } };
+  for (const path of ['/parties/chat/other', '/parties/chat/global2', '/parties/bee/bee', '/parties/cogito-relay/x']) {
+    assert.equal((await worker.fetch(new Request(`https://gnome.science${path}`), env)).status, 404, path);
+  }
+  assert.equal(await (await worker.fetch(new Request('https://gnome.science/parties/chat/global'), env)).text(), 'passed on');
+});
+
+test('bot CSS cannot load URLs or leave the chat sandbox, and storage is capped', () => {
+  for (const css of ['.x { background: u\\72l(https://evil.example/a) }', '@\\69mport "https://evil.example/a.css";', '.x { background: image-set("https://evil.example/a.png" 1x) }']) {
+    assert.doesNotMatch(sanitizeCss(css), /url\s*\(|@import|image-set\s*\(/i, css);
+  }
+  assert.equal(staysScoped('.x { color: red } @media (width > 1px) { .y { content: "}" } }'), true);
+  for (const css of ['} .msg-body { display: none }', '.x { content: "{" } } .y {', '.x { content: "{\n} .y {}', '.x {} /* } */ }']) assert.equal(staysScoped(css), false, css);
+  const chat = new Chat();
+  chat.saveCss('} .msg-body { display: none } .x {');
+  assert.equal(chat.customCss, '');
+  chat.saveCss('.x { color: red }');
+  assert.equal(chat.customCss, '.x { color: red }');
+  for (let i = 0; i < 1005; i++) chat.saveMessage({ id: `m${i}`, user: 'visitor', role: 'user', content: 'hi' });
+  assert.equal(chat.messages.length, 1000);
+  assert.equal(chat.messages[0].id, 'm5');
 });

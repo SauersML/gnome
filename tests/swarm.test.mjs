@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { BeeModel } from '../src/server/bee.ts';
-import { SWARM, PERSON, moodTurns, tinyPrompt, parseBuzz, speak } from '../swarm/src/swarm.ts';
+import { SWARM, PERSON, moodTurns, tinyPrompt, parseBuzz, rateKey, speak } from '../swarm/src/swarm.ts';
 
 const transcript = [
   { who: PERSON, text: 'hi bees!' },
@@ -48,4 +48,11 @@ test('every bee in the swarm speaks with its own pinned model', () => {
     if (model.chat) assert.match(text, /^(\[(neutral|happy|loving|sad|angry|confused):(low|high)\])?/, bee.id);
     else assert.ok(text.length > 0, `${bee.id} produced nothing`);
   }
+});
+
+test('one IPv6 host is one rate-limit key, whichever address of its /64 it uses', () => {
+  assert.equal(rateKey('203.0.113.7'), '203.0.113.7');
+  assert.equal(rateKey('2001:db8:1:2::1'), '2001:db8:1:2::/64');
+  assert.equal(rateKey('2001:0db8:0001:0002:aaaa:bbbb:cccc:dddd'), '2001:db8:1:2::/64');
+  assert.equal(rateKey('2001:db8::5'), '2001:db8:0:0::/64');
 });

@@ -1,29 +1,36 @@
 // bee.gnome.science: the swarm page (static assets) and POST /api/buzz, which runs one
 // bee on the conversation so far. The page decides who buzzes next and when to stop.
+import { DurableObject } from "cloudflare:workers";
 import { type BeeModel, LLAMA_SERVER_SAMPLING } from "../../src/server/bee";
 import { loadBee } from "../../src/server/bee-assets";
-import { type SwarmBee, parseBuzz, speak } from "./swarm";
+import { SWARM, type SwarmEntry, parseBuzz, rateKey, speak } from "./swarm";
 
 interface Env {
 	ASSETS: Fetcher;
 	BUZZ_LIMIT: RateLimit;
+	HIVE: DurableObjectNamespace<BeeCell>;
 }
 
 const MAX_BODY = 64 * 1024;
+// A buzz that waited this long behind others is turned away unrun.
+const MAX_WAIT_MS = 20_000;
 // Paths only llama.cpp's web UI requests. That UI was served here briefly and its service
 // worker can keep showing it; answering its requests this way makes the browser drop it.
 const OLD_UI = /^\/(?:props|models(?:\/.*)?|v1\/models|health|v1\/health|build\.json|tools|slots|cors-proxy|v1\/chat\/completions(?:\/.*)?|v1\/streams?(?:\/.*)?|manifest\.webmanifest|_app\/.*)$/;
-const models = new Map<string, Promise<BeeModel>>();
 
-function model(env: Env, bee: SwarmBee): Promise<BeeModel> {
-	const file = bee.file;
-	let m = models.get(file);
-	if (!m) {
-		m = loadBee(env.ASSETS, file, undefined, { ...LLAMA_SERVER_SAMPLING, ...bee.sampling });
-		models.set(file, m);
-		m.catch(() => models.delete(file));
+// Each bee runs in her own Durable Object, one buzz at a time, so however many requests
+// arrive, at most six buzzes are computed at once and the swarm's cost has a fixed ceiling.
+export class BeeCell extends DurableObject<Env> {
+	private model: Promise<BeeModel> | null = null;
+
+	async buzz(beeId: string, transcript: SwarmEntry[], sentAt: number): Promise<string | null> {
+		if (Date.now() - sentAt > MAX_WAIT_MS) return null;
+		const bee = SWARM.find((b) => b.id === beeId);
+		if (!bee) throw new Error(`unknown bee ${beeId}`);
+		this.model ??= loadBee(this.env.ASSETS, bee.file, undefined, { ...LLAMA_SERVER_SAMPLING, ...bee.sampling });
+		this.model.catch(() => { this.model = null; });
+		return speak(bee, await this.model, transcript);
 	}
-	return m;
 }
 
 const error = (status: number, message: string) => Response.json({ error: message }, { status });
@@ -35,7 +42,9 @@ export default {
 		if (url.pathname !== "/api/buzz") return env.ASSETS.fetch(request);
 		if (request.method !== "POST") return error(405, "POST only");
 		const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
-		if (!(await env.BUZZ_LIMIT.limit({ key: ip })).success) return error(429, "the hive needs a rest, try again in a minute");
+		if (!(await env.BUZZ_LIMIT.limit({ key: rateKey(ip) })).success) return error(429, "the hive needs a rest, try again in a minute");
+		// The page always sends Content-Length; a body without one, or longer, is never read.
+		if (!(Number(request.headers.get("content-length") ?? Infinity) <= MAX_BODY)) return error(413, "too long");
 		const raw = await request.text();
 		if (raw.length > MAX_BODY) return error(413, "too long");
 		let body: unknown;
@@ -43,7 +52,8 @@ export default {
 		const parsed = parseBuzz(body);
 		if ("error" in parsed) return error(400, parsed.error);
 		try {
-			const text = speak(parsed.bee, await model(env, parsed.bee), parsed.transcript);
+			const text = await env.HIVE.getByName(parsed.bee.id).buzz(parsed.bee.id, parsed.transcript, Date.now());
+			if (text === null) return error(503, "the hive is busy, try again in a minute");
 			return Response.json({ bee: parsed.bee.id, text });
 		} catch (e) {
 			console.error(parsed.bee.id, "failed:", e instanceof Error ? e.message : String(e));
@@ -51,4 +61,3 @@ export default {
 		}
 	},
 } satisfies ExportedHandler<Env>;
-

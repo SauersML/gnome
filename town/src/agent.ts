@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { BeeModel, BeeTurn, Sampling } from "../../src/server/bee";
 import { MAX_REPLY_TOKENS } from "../../src/server/bee";
 import { beeVersion, loadBee } from "../../src/server/bee-assets";
-import { garblePenalty } from "../../src/server/garble.ts";
+import { garblePenalty, saysSlur } from "../../src/server/garble.ts";
 import {
 	AMBIENT_EVERY_MS, BEE_PROTOTYPES, MAX_POST_AGE_MS, OWN_POST_EVERY_MS, REACTIONS, REACT_EVERY_MS, SEARCH_TERMS,
 	type Memory, type Spoken, type TownPost,
@@ -121,8 +121,9 @@ export class BeeAgent extends DurableObject<Env> {
 		return s;
 	}
 
-	// Generates her reply to a conversation, preceded by her memory of everything else. A new
-	// model starts with an empty memory: the old model's replies would teach it the old voice.
+	// Generates her reply to a conversation, preceded by her memory of everything else, or silence
+	// rather than a slur. A new model starts with an empty memory: the old model's replies would
+	// teach it the old voice.
 	private async buzz(bee: TownBee, root: string, turns: BeeTurn[]): Promise<string> {
 		this.model ??= beeVersion(this.env.ASSETS, bee.file).then((version) => {
 			if (this.get("memoryOf") !== version) {
@@ -132,7 +133,8 @@ export class BeeAgent extends DurableObject<Env> {
 			return loadBee(this.env.ASSETS, bee.file, CONTEXT_TOKENS + MAX_REPLY_TOKENS, bee.sampling);
 		});
 		this.model.catch(() => { this.model = null; });
-		return postText((await this.model).reply(withMemory(this.memory(), root, turns), Math.random, CONTEXT_TOKENS, bee.candidates, bee.relevance, garblePenalty(turns.at(-1)?.content ?? "")));
+		const reply = postText((await this.model).reply(withMemory(this.memory(), root, turns), Math.random, CONTEXT_TOKENS, bee.candidates, bee.relevance, garblePenalty(turns.at(-1)?.content ?? "")));
+		return saysSlur(reply) ? "" : reply;
 	}
 
 	private async createPost(s: Session, record: Record<string, unknown>) {

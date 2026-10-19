@@ -18,8 +18,24 @@ const CSS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 10;
 
-// Daily budget cap: max LLM calls per day (resets at midnight UTC)
+// Daily budgets (reset at midnight UTC), kept in storage so that an object evicted between
+// messages cannot start the day over: bot replies by count and by the cost OpenRouter reports,
+// and Haiku moderation by cost. A call whose cost is not reported is charged UNREPORTED_COST.
 const DAILY_CALL_LIMIT = 500;
+const DAILY_BOT_DOLLARS = 2;
+const DAILY_MODERATION_DOLLARS = 0.5;
+const UNREPORTED_COST = { bots: 0.05, moderation: 0.001 };
+// Haiku reviews at most this many messages a minute; past it, messages are dropped unread (a
+// flood), and past the day's moderation budget they are checked by the word filter alone.
+const MODERATION_PER_MINUTE = 30;
+
+// The one chat room the site uses. Other room names would each get a Chat object, with its own
+// budgets and storage.
+const CHAT_ROOM = /^\/parties\/chat\/global(?:\/|$)/;
+// Storage caps: older messages are deleted, and bots cannot add pages or CSS past these.
+const MAX_STORED_MESSAGES = 1000;
+const MAX_PAGES = 40;
+const MAX_CSS_CHARS = 20_000;
 
 // Per-connection: max LLM triggers per minute (prevents one user hogging the budget)
 const PER_CONN_LLM_WINDOW_MS = 60_000;
@@ -607,10 +623,13 @@ function isModerated(content: string): boolean {
 	return false;
 }
 
-function sanitizeCss(css: string): string {
+export function sanitizeCss(css: string): string {
 	return css
+		// CSS escapes (u\72l, @\69mport) would spell blocked words past the patterns below
+		.replace(/\\/g, "")
 		// Block data exfiltration and code execution
 		.replace(/@import\b[^;]*/gi, "/* blocked */")
+		.replace(/(?:-webkit-)?image-set\s*\(|\bimage\s*\(|cross-fade\s*\(|\bsrc\s*\(/gi, "/* blocked */(")
 		.replace(/@font-face\s*\{[^}]*\}/gi, "/* blocked */")
 		.replace(/url\s*\([^)]*\)/gi, "/* blocked */")
 		.replace(/expression\s*\([^)]*\)/gi, "/* blocked */")
@@ -630,6 +649,17 @@ function sanitizeCss(css: string): string {
 		.replace(/\.nav-back\b/gi, "/* blocked */");
 }
 
+// Whether css stays inside the client's @scope (.chat-sandbox) block: once comments and strings
+// (whose braces the browser ignores) are set aside, no string or comment is left open and every
+// brace closes one that css opened.
+export function staysScoped(css: string): boolean {
+	const bare = css.replace(/\/\*[\s\S]*?\*\/|"[^"\n]*"|'[^'\n]*'/g, "");
+	if (/["'\\]|\/\*/.test(bare)) return false;
+	let depth = 0;
+	for (const c of bare) if ((depth += c === "{" ? 1 : c === "}" ? -1 : 0) < 0) return false;
+	return depth === 0;
+}
+
 const TOOL_DOCS = `
 You have tools via fenced code blocks (optional — feel free to just chat):
 \`\`\`css-add — appends CSS rules.
@@ -643,7 +673,7 @@ Note: use css-add or css-edit, not plain css blocks.`;
 function buildSystemPrompt(customCss: string, pages: Page[]): string {
 	const cssSnippet = customCss ? `\nCustom CSS currently applied:\n${customCss}` : "\nNo custom CSS applied.";
 	const pagesSnippet = pages.length > 0
-		? `\nPages in sidebar:\n${pages.map((p) => `  slug="${p.slug}" title="${p.title}" abstract="${p.abstract}"\n  body: ${p.body.slice(0, 300)}${p.body.length > 300 ? "..." : ""}`).join("\n")}`
+		? `\nPages in sidebar:\n${pages.map((p) => `  slug="${p.slug.slice(0, 80)}" title="${p.title.slice(0, 120)}" abstract="${p.abstract.slice(0, 300)}"\n  body: ${p.body.slice(0, 300)}${p.body.length > 300 ? "..." : ""}`).join("\n")}`
 		: "\nNo pages yet.";
 	return `You are chatting at gnome.science.${cssSnippet}${pagesSnippet}
 
@@ -672,8 +702,7 @@ export class Chat extends Server<Env> {
 	cssUpdatedAt = 0;
 	kimiCallTimestamps: number[] = [];
 	beeCallTimestamps: number[] = [];
-	dailyCalls = 0;
-	dailyCallDate = "";
+	moderationTimestamps: number[] = [];
 
 	broadcastMessage(message: Message, exclude?: string[]) {
 		this.broadcast(JSON.stringify(message), exclude);
@@ -684,22 +713,35 @@ export class Chat extends Server<Env> {
 		this.broadcastMessage({ type: "presence", count });
 	}
 
+	// Today's calls and dollars spent from the daily budget `key` ("bots" or "moderation").
+	budget(key: keyof typeof UNREPORTED_COST): { calls: number; dollars: number } {
+		const value = this.ctx.storage.sql.exec(`SELECT value FROM kv WHERE key = ?`, `budget_${key}`).toArray()[0]?.value;
+		const [date, calls, dollars] = String(value ?? "").split(" ");
+		return date === new Date().toISOString().slice(0, 10) ? { calls: Number(calls), dollars: Number(dollars) } : { calls: 0, dollars: 0 };
+	}
+
+	charge(key: keyof typeof UNREPORTED_COST, calls: number, dollars: number) {
+		const spent = this.budget(key);
+		this.ctx.storage.sql.exec(
+			`INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+			`budget_${key}`, `${new Date().toISOString().slice(0, 10)} ${spent.calls + calls} ${spent.dollars + dollars}`,
+		);
+	}
+
+	// The dollars an OpenRouter response says it cost, or the budget's charge for an unreported call.
+	reportedCost(key: keyof typeof UNREPORTED_COST, data: any): number {
+		const cost = data?.usage?.cost;
+		return typeof cost === "number" && cost >= 0 ? cost : UNREPORTED_COST[key];
+	}
+
 	isRateLimited(): boolean {
 		const now = Date.now();
 		this.kimiCallTimestamps = this.kimiCallTimestamps.filter(
 			(t) => now - t < RATE_LIMIT_WINDOW_MS,
 		);
 		if (this.kimiCallTimestamps.length >= RATE_LIMIT_MAX) return true;
-
-		// Daily budget check
-		const today = new Date().toISOString().slice(0, 10);
-		if (this.dailyCallDate !== today) {
-			this.dailyCalls = 0;
-			this.dailyCallDate = today;
-		}
-		if (this.dailyCalls >= DAILY_CALL_LIMIT) return true;
-
-		return false;
+		const today = this.budget("bots");
+		return today.calls >= DAILY_CALL_LIMIT || today.dollars >= DAILY_BOT_DOLLARS;
 	}
 
 	isConnectionLLMRateLimited(connection: Connection): boolean {
@@ -714,12 +756,7 @@ export class Chat extends Server<Env> {
 
 	recordKimiCall() {
 		this.kimiCallTimestamps.push(Date.now());
-		const today = new Date().toISOString().slice(0, 10);
-		if (this.dailyCallDate !== today) {
-			this.dailyCalls = 0;
-			this.dailyCallDate = today;
-		}
-		this.dailyCalls++;
+		this.charge("bots", 1, 0);
 	}
 
 	onStart() {
@@ -814,6 +851,7 @@ export class Chat extends Server<Env> {
 			this.messages[idx] = message;
 		} else {
 			this.messages.push(message);
+			for (const old of this.messages.slice(0, -MAX_STORED_MESSAGES)) this.deleteMessage(old.id);
 		}
 
 		this.ctx.storage.sql.exec(
@@ -836,8 +874,10 @@ export class Chat extends Server<Env> {
 		const idx = this.pages.findIndex((p) => p.slug === page.slug);
 		if (idx !== -1) {
 			this.pages[idx] = page;
-		} else {
+		} else if (this.pages.length < MAX_PAGES) {
 			this.pages.push(page);
+		} else {
+			return;
 		}
 		this.ctx.storage.sql.exec(
 			`INSERT INTO pages (slug, title, abstract, body) VALUES (?, ?, ?, ?)
@@ -847,7 +887,9 @@ export class Chat extends Server<Env> {
 		);
 	}
 
+	// CSS past MAX_CSS_CHARS, or able to leave the chat's sandbox, is refused.
 	saveCss(css: string) {
+		if (css.length > MAX_CSS_CHARS || !staysScoped(css)) return;
 		this.customCss = css;
 		this.cssUpdatedAt = Date.now();
 		this.ctx.storage.sql.exec(
@@ -867,6 +909,11 @@ export class Chat extends Server<Env> {
 	async moderateWithHaiku(content: string, user: string): Promise<boolean> {
 		const apiKey = (this.env as any).OPENROUTER_API_KEY;
 		if (!apiKey) return true; // fail-open: no key, allow through
+		const now = Date.now();
+		this.moderationTimestamps = this.moderationTimestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+		if (this.moderationTimestamps.length >= MODERATION_PER_MINUTE) return false;
+		if (this.budget("moderation").dollars >= DAILY_MODERATION_DOLLARS) return true;
+		this.moderationTimestamps.push(now);
 
 		const systemPrompt = `You are a content moderator for a public chat room called gnome.science.
 
@@ -903,6 +950,7 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 					],
 					// Haiku 5.5 spends 4 tokens on "BLOC"; 8 fits the whole verdict.
 					max_tokens: 8,
+					usage: { include: true },
 				}),
 			});
 			if (!res.ok) {
@@ -910,6 +958,7 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 				return true; // fail-open on upstream error
 			}
 			const data = await res.json() as any;
+			this.charge("moderation", 1, this.reportedCost("moderation", data));
 			const verdict = (data.choices?.[0]?.message?.content ?? "").trim().toUpperCase();
 			return !verdict.startsWith("BLOCK");
 		} catch (e) {
@@ -951,7 +1000,7 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 				model, messages, temperature: 0.6,
 				stop: ["<|end_of_output|>", "<|end_of_text|>", "<|eot_id|>", "<|endoftext|>"],
 				chat_template_kwargs: { enable_thinking: false },
-			} : { model, messages, max_tokens: maxTokens });
+			} : { model, messages, max_tokens: maxTokens, usage: { include: true } });
 			const requestCompletion = () => isCogito ? requestCogito(this.env.COGITO_RELAY, reqBody) : fetch("https://openrouter.ai/api/v1/chat/completions", {
 				method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
 				body: reqBody, signal: AbortSignal.timeout(120_000),
@@ -979,6 +1028,7 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 				responseText = await res.text();
 			} else {
 				const data = await res.json() as any;
+				this.charge("bots", 0, this.reportedCost("bots", data));
 				if (data.error) throw new Error(`OpenRouter completion error: ${data.error.code ?? "unknown"}`);
 				responseText = data.choices?.[0]?.message?.content ?? "";
 			}
@@ -1127,7 +1177,7 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 		try { parsed = JSON.parse(message); } catch { return; }
 		if (!parsed || typeof parsed !== "object") return;
 		if (parsed.type === "typing") {
-			if (typeof parsed.user === "string" && parsed.user.length <= 80 && typeof parsed.isTyping === "boolean") {
+			if (typeof parsed.user === "string" && parsed.user.length <= 80 && !isModerated(parsed.user) && typeof parsed.isTyping === "boolean") {
 				this.broadcastMessage({ type: "typing", user: parsed.user, isTyping: parsed.isTyping });
 			}
 			return;
@@ -1227,6 +1277,7 @@ export default {
 			return new Response("Gone", { status: 410 });
 		}
 
+		if (url.pathname.startsWith("/parties/") && !CHAT_ROOM.test(url.pathname)) return new Response("not found", { status: 404 });
 		const partyResponse = await routePartykitRequest(request, env);
 		if (partyResponse) return partyResponse;
 

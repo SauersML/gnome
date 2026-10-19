@@ -1,7 +1,7 @@
 // The bee.gnome.science swarm: six BeeLLM models in one conversation. Each bee hears the
 // person in full and only the latest few buzzes of the other bees.
 import type { BeeTurn, Sampling } from "../../src/server/bee";
-import { garblePenalty } from "../../src/server/garble.ts";
+import { garblePenalty, saysSlur } from "../../src/server/garble.ts";
 
 export type SwarmEntry = { who: string; text: string };
 // sampling, candidates and relevance are optional per bee (see BeeModel.reply); wholeWords
@@ -68,15 +68,17 @@ export function tinyPrompt(transcript: SwarmEntry[]): string {
 	return buzzes.join(" ").slice(-MAX_TEXT) || "buzz";
 }
 
+// A bee stays silent rather than repeat a slur she was fed.
 export function speak(bee: SwarmBee, model: Speaker, transcript: SwarmEntry[], random: () => number = Math.random): string {
+	let text = "";
 	if (model.chat) {
 		const turns = moodTurns(bee.id, transcript);
-		return model.reply(turns, random, bee.maxPromptTokens, bee.candidates ?? 1, bee.relevance ?? 0, bee.wholeWords ? garblePenalty(turns.at(-1)?.content ?? "") : undefined);
+		text = model.reply(turns, random, bee.maxPromptTokens, bee.candidates ?? 1, bee.relevance ?? 0, bee.wholeWords ? garblePenalty(turns.at(-1)?.content ?? "") : undefined);
+	} else {
+		// A Mood bee's silence means something; a tiny bee that stops at once just tries again.
+		for (let attempt = 0; attempt < TINY_BEE_ATTEMPTS && !text; attempt++) text = model.continueText(tinyPrompt(transcript), TINY_BEE_TOKENS, random);
 	}
-	// A Mood bee's silence means something; a tiny bee that stops at once just tries again.
-	let text = "";
-	for (let attempt = 0; attempt < TINY_BEE_ATTEMPTS && !text; attempt++) text = model.continueText(tinyPrompt(transcript), TINY_BEE_TOKENS, random);
-	return text;
+	return saysSlur(text) ? "" : text;
 }
 
 // Validates an untrusted request body into a bee and a transcript, or returns an error.
@@ -93,4 +95,14 @@ export function parseBuzz(body: unknown): { bee: SwarmBee; transcript: SwarmEntr
 		entries.push({ who: e.who, text: e.text.slice(0, MAX_TEXT) });
 	}
 	return { bee, transcript: entries };
+}
+
+// The rate-limit key for an address: an IPv6 host can use every address in its /64.
+export function rateKey(ip: string): string {
+	if (!ip.includes(":")) return ip;
+	const [head, tail = ""] = ip.split("::");
+	const h = head ? head.split(":") : [];
+	const t = tail ? tail.split(":") : [];
+	const groups = ip.includes("::") ? [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t] : h;
+	return groups.slice(0, 4).map((g) => parseInt(g || "0", 16).toString(16)).join(":") + "::/64";
 }

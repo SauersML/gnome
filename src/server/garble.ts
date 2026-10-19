@@ -49,8 +49,23 @@ export function repeatsSentence(reply: string): boolean {
 	return new Set(clauses).size < clauses.length;
 }
 
+// Slurs a bee must never post, however she is asked to repeat them. They are matched as whole
+// words (or letters spelled out one by one), so "cocoon", "spicy" and "a chink of light" stay hers.
+const SLUR = new RegExp(`^(?:${[
+	"n[i1!|]+g{2,}(?:[e3]+r+|uh)[sz]?", "n[i1!|]+g+[a@]+h?[sz]?", "k[i1!|]+k[e3]s?", "sp[i1!|]+c+k*s?", "g[o0]{2,}ks?",
+	"wetbacks?", "c[o0]{2,}ns?", "dark(?:ies?|y)", "jigaboos?", "(?:rag|towel)heads?", "sandn[i1!|]g+(?:[e3]+r|[a@])?s?",
+	"beaners?", "f[a@4]+g+(?:[o0]+t+)?s?", "dykes?", "trann(?:y|ies?)", "shemales?",
+].join("|")})$`, "i");
+
+export function saysSlur(reply: string): boolean {
+	const words = reply.toLowerCase().split(/[^a-z0-9@!|]+/).map((w) => w.replace(/^[!|]+|[!|]+$/g, "")).filter(Boolean);
+	const spelled = words.join(" ").match(/\b(?:\S ){2,}\S\b/g)?.map((run) => run.replace(/ /g, "")) ?? [];
+	return [...words, ...spelled].some((w) => SLUR.test(w));
+}
+
 // The bees' draft penalty when answering `heard`: of two drafts, one half-word in ten outweighs a
-// 0.6 nat higher mean log-probability, a broken opening outweighs 1 nat, and a repeated sentence 2.
+// 0.6 nat higher mean log-probability, a broken opening outweighs 1 nat, a repeated sentence 2, and
+// a slur any draft without one.
 export function garblePenalty(heard: string): (draft: string) => number {
-	return (draft) => 6 * garbleShare(draft, heard) + (opensBroken(draft, heard) ? 1 : 0) + (repeatsSentence(draft) ? 2 : 0);
+	return (draft) => 6 * garbleShare(draft, heard) + (opensBroken(draft, heard) ? 1 : 0) + (repeatsSentence(draft) ? 2 : 0) + (saysSlur(draft) ? 1000 : 0);
 }

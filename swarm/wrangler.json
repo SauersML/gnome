@@ -11,6 +11,10 @@
 	"build": {
 		"command": "node scripts/fetch-bee.mjs swarm/public BeeLLM-13M-Somnia-Q8_0 BeeLLM-1M-Mood BeeLLM-1M-Mood-Chaos BeeLLM-42P-Chaos BeeLLM-42P BeeLLM-30P"
 	},
+	"durable_objects": {
+		"bindings": [{ "class_name": "BeeCell", "name": "HIVE" }]
+	},
+	"migrations": [{ "new_sqlite_classes": ["BeeCell"], "tag": "v1" }],
 	"ratelimits": [
 		{ "name": "BUZZ_LIMIT", "namespace_id": "4207", "simple": { "limit": 90, "period": 60 } }
 	],

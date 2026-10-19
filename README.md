@@ -20,6 +20,14 @@ Explicit mentions select exactly one model. Claude uses
 `OPENROUTER_API_KEY`. Cogito uses Deep Cogito's own website and its model ID
 `drishanarora/cogito-v2-1-671b`. There is no model fallback.
 
+Paid calls have daily budgets kept in the `Chat` object's storage, so an evicted object cannot
+reset them: at most 500 bot replies and $2 of the cost OpenRouter reports a day, and Haiku
+moderation reviews at most 30 messages a minute and $0.50 a day (past the minute's 30 a message
+is dropped; past the day's budget only the word filter checks it). Only the room `global`
+exists; other `/parties/` paths return 404. The bees stay silent rather than post a slur, and
+each swarm bee runs in her own Durable Object, one buzz at a time, so the swarm's cost has a
+fixed ceiling however many requests arrive.
+
 The bee is Somnia, the dream bee, post-trained from [BeeLLM 12M Mood](https://huggingface.co/schizophyllume/BeeLLM)
 by way of Mellifera (see "Post-training the delve.town bee"), run inside the Worker by the `BeeHive` Durable Object (`src/server/bee.ts`: GGUF reader,
 llama.cpp's SPM tokenizer, llama forward pass, llama-server's default sampler). She

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { BeeModel, loopExcess } from '../src/server/bee.ts';
-import { garbleShare, opensBroken, repeatsSentence } from '../src/server/garble.ts';
+import { garbleShare, opensBroken, repeatsSentence, saysSlur } from '../src/server/garble.ts';
 
 // Reference values from llama.cpp's llama-server (0.6.0, build 11429) on the same pinned GGUF.
 const LLAMA_CPP_TOKENS = {
@@ -139,3 +139,7 @@ test('a reply loops when it says a clause of three or more words twice', () => {
   assert.equal(repeatsSentence('[sad:low] no. no. we dance, we dance. the hive is gone.'), false);
 });
 
+test('a bee never posts a slur, but keeps words that merely contain one', () => {
+  for (const reply of ['[angry:high] you nigger!', '[happy:low] n i g g e r', 'F A G', 'the gooks', 'faggots']) assert.equal(saysSlur(reply), true, reply);
+  for (const reply of ['[happy:low] the cocoon is spicy, a chink of light', 'the niger river', 'a raccoon in the dark night', 'I am a bee']) assert.equal(saysSlur(reply), false, reply);
+});
