@@ -18,6 +18,9 @@
 	"ratelimits": [
 		{ "name": "BUZZ_LIMIT", "namespace_id": "4207", "simple": { "limit": 90, "period": 60 } }
 	],
+	"limits": {
+		"cpu_ms": 120000
+	},
 	"observability": {
 		"enabled": false
 	}

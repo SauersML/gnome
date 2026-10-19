@@ -12,14 +12,15 @@ interface Env {
 }
 
 const MAX_BODY = 64 * 1024;
-// A buzz that waited this long behind others is turned away unrun.
-const MAX_WAIT_MS = 20_000;
+// A buzz that waited this long behind others is turned away unrun. Somnia takes up to about 40 s.
+const MAX_WAIT_MS = 60_000;
 // Paths only llama.cpp's web UI requests. That UI was served here briefly and its service
 // worker can keep showing it; answering its requests this way makes the browser drop it.
 const OLD_UI = /^\/(?:props|models(?:\/.*)?|v1\/models|health|v1\/health|build\.json|tools|slots|cors-proxy|v1\/chat\/completions(?:\/.*)?|v1\/streams?(?:\/.*)?|manifest\.webmanifest|_app\/.*)$/;
 
-// Each bee runs in her own Durable Object, one buzz at a time, so however many requests
-// arrive, at most six buzzes are computed at once and the swarm's cost has a fixed ceiling.
+// Each bee runs in her own Durable Objects (one, or `cells`), one buzz at a time each, so however
+// many requests arrive, at most nine buzzes are computed at once and the swarm's cost has a
+// fixed ceiling.
 export class BeeCell extends DurableObject<Env> {
 	private model: Promise<BeeModel> | null = null;
 
@@ -52,7 +53,8 @@ export default {
 		const parsed = parseBuzz(body);
 		if ("error" in parsed) return error(400, parsed.error);
 		try {
-			const text = await env.HIVE.getByName(parsed.bee.id).buzz(parsed.bee.id, parsed.transcript, Date.now());
+			const cell = env.HIVE.getByName(`${parsed.bee.id}-${Math.floor(Math.random() * (parsed.bee.cells ?? 1))}`);
+			const text = await cell.buzz(parsed.bee.id, parsed.transcript, Date.now());
 			if (text === null) return error(503, "the hive is busy, try again in a minute");
 			return Response.json({ bee: parsed.bee.id, text });
 		} catch (e) {

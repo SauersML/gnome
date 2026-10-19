@@ -41,6 +41,9 @@
 			}
 		]
 	},
+	"limits": {
+		"cpu_ms": 120000
+	},
 	"observability": {
 		"enabled": false
 	},
