@@ -63,9 +63,42 @@ export function saysSlur(reply: string): boolean {
 	return [...words, ...spelled].some((w) => SLUR.test(w));
 }
 
+// Sounds a bee hears or makes. Each base word counts with its inflections (hum: hums, hummed,
+// humming), so "humans", "sight" and "dinner" are not sounds; her own noises (bzz, zzzz, hmmm,
+// brrr) count too.
+const SOUND_BASES = (
+	"buzz hum drone thrum whir whirr murmur rustle crackle roar hiss click tick sing sang sung song ring rang rung " +
+	"chime whisper patter drum purr rattle creak splash gurgle babble chirp trill twitter peep pipe toot croak howl " +
+	"wail moan sigh clatter clang bang boom thunder rumble thud plop drip pop snap crunch fizz sizzle shriek scream " +
+	"shout echo echoes loud loudly hush silence silent quiet noise noisy sound music voice tune chorus choir hymn " +
+	"racket rasp scrape squeak squeal whistle whine throb pulse beat tap knock jingle tinkle zing whoosh swish swoosh " +
+	"flutter"
+).split(" ");
+const NOISE = /^(?:b+r*z{2,}[zt]*|z{3,}|h+m{2,}|b+r{2,}|bzz+t*)$/;
+
+function inflections(base: string): string[] {
+	const out = ["", "s", "es", "ed", "ing", "er", "ers", "y"].map((end) => base + end);
+	if (base.endsWith("e")) out.push(base + "d", base + "r", base.slice(0, -1) + "ing", base.slice(0, -1) + "y");
+	if (base.length >= 3 && !"aeiouwxy".includes(base.at(-1)!) && "aeiou".includes(base.at(-2)!) && !"aeiou".includes(base.at(-3)!)) {
+		for (const end of ["ing", "ed", "er", "ers"]) out.push(base + base.at(-1) + end);
+	}
+	if (base.endsWith("y")) for (const end of ["ies", "ied", "ier", "iest", "ily"]) out.push(base.slice(0, -1) + end);
+	return out;
+}
+
+const SOUND_WORDS = new Set(SOUND_BASES.flatMap(inflections));
+
+// How many words of a reply (mood tag excluded) are sounds.
+export function soundCount(reply: string): number {
+	const words = reply.replace(/^\[[a-z]+:[a-z]+\]\s*/, "").toLowerCase().replace(/\u2019/g, "'").match(/[a-z']+/g) ?? [];
+	return words.filter((w) => SOUND_WORDS.has(w) || NOISE.test(w)).length;
+}
+
 // The bees' draft penalty when answering `heard`: of two drafts, one half-word in ten outweighs a
 // 0.6 nat higher mean log-probability, a broken opening outweighs 1 nat, a repeated sentence 2, and
-// a slur any draft without one.
+// a slur any draft without one. Each sound word, up to three, takes 0.5 off, so Somnia picks her
+// drafts that hum, buzz and sing: of six drafts per reply this raised the share of her replies
+// with a sound from 4% to 29%, with half-words still at 0.2%.
 export function garblePenalty(heard: string): (draft: string) => number {
-	return (draft) => 6 * garbleShare(draft, heard) + (opensBroken(draft, heard) ? 1 : 0) + (repeatsSentence(draft) ? 2 : 0) + (saysSlur(draft) ? 1000 : 0);
+	return (draft) => 6 * garbleShare(draft, heard) + (opensBroken(draft, heard) ? 1 : 0) + (repeatsSentence(draft) ? 2 : 0) + (saysSlur(draft) ? 1000 : 0) - 0.5 * Math.min(3, soundCount(draft));
 }

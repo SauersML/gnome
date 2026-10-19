@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { BeeModel, loopExcess } from '../src/server/bee.ts';
-import { garbleShare, opensBroken, repeatsSentence, saysSlur } from '../src/server/garble.ts';
+import { garblePenalty, garbleShare, opensBroken, repeatsSentence, saysSlur, soundCount } from '../src/server/garble.ts';
 import { BusyAllowance } from '../src/server/busy.ts';
 
 // Reference values from llama.cpp's llama-server (0.6.0, build 11429) on the same pinned GGUF.
@@ -143,6 +143,13 @@ test('a reply loops when it says a clause of three or more words twice', () => {
 test('a bee never posts a slur, but keeps words that merely contain one', () => {
   for (const reply of ['[angry:high] you nigger!', '[happy:low] n i g g e r', 'F A G', 'the gooks', 'faggots']) assert.equal(saysSlur(reply), true, reply);
   for (const reply of ['[happy:low] the cocoon is spicy, a chink of light', 'the niger river', 'a raccoon in the dark night', 'I am a bee']) assert.equal(saysSlur(reply), false, reply);
+});
+
+test('Somnia prefers drafts with sounds, counted as whole words', () => {
+  assert.equal(soundCount('[happy:high] bzzzz! the hive hums and the rain is ticking, hmmm'), 4);
+  assert.equal(soundCount('[sad:low] the humans in sight range over the dinner by the poppy'), 0);
+  const penalty = garblePenalty('what does summer sound like?');
+  assert.ok(penalty('[happy:low] the linden roars with bees') < penalty('[happy:low] the linden is full of bees'));
 });
 
 test('a busy allowance charges wall time and refuses work once the month\'s seconds are spent', async () => {
