@@ -108,7 +108,7 @@ input::placeholder { color: var(--faint); }
 	</div>
 </div>
 <script>
-const BEES = [
+const ALL_BEES = [
 	{ id: "somnia", name: "Somnia", model: "13M" },
 	{ id: "melissa", name: "Melissa", model: "1M Mood" },
 	{ id: "bombus", name: "Bombus", model: "1M Chaos" },
@@ -116,13 +116,18 @@ const BEES = [
 	{ id: "zuzu", name: "Zuzu", model: "42P" },
 	{ id: "bzz", name: "Bzz", model: "30P" },
 ];
+// ?bee=somnia (or any bee's id) talks to that bee alone: she answers every message, once, and the
+// conversation is stored apart from the swarm's.
+const SOLO = ALL_BEES.find((b) => b.id === new URLSearchParams(location.search).get("bee"));
+const BEES = SOLO ? [SOLO] : ALL_BEES;
 const BY_ID = Object.fromEntries(BEES.map((b) => [b.id, b]));
 const MOODS = { neutral: "😐", happy: "😊", loving: "🥰", sad: "😢", angry: "😠", confused: "😵‍💫" };
 // Chance that the swarm keeps going after each reply: everyone is keen at first, then it dies down.
-const KEEP_BUZZING = [1, 1, 1, 0.8, 0.65, 0.5, 0.35, 0.2, 0.1];
+const KEEP_BUZZING = SOLO ? [1] : [1, 1, 1, 0.8, 0.65, 0.5, 0.35, 0.2, 0.1];
 // Emoji chips that send a phrase the bees understand.
-const SUGGESTIONS = [["👋", "hi bees!"], ["🌸", "*gives you a flower*"], ["🖐️", "*swats you*"], ["🙏", "sorry"], ["❤️", "i love you all"], ["🫙", "*puts you in a jar*"], ["🔓", "*opens the jar*"], ["🎵", "sing for me"]];
-const STORE = "bee-swarm-v1";
+const SUGGESTIONS = [["👋", SOLO ? "hi bee!" : "hi bees!"], ["🌸", "*gives you a flower*"], ["🖐️", "*swats you*"], ["🙏", "sorry"], ["❤️", SOLO ? "i love you" : "i love you all"], ["🫙", "*puts you in a jar*"], ["🔓", "*opens the jar*"], ["🎵", "sing for me"]];
+const STORE = SOLO ? `bee-${SOLO.id}-v1` : "bee-swarm-v1";
+if (SOLO) document.title = SOLO.name;
 const $ = (id) => document.getElementById(id);
 const log = $("log"), input = $("input");
 
