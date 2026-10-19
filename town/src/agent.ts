@@ -32,6 +32,7 @@ const PAUSE_MS = 15 * 60_000;
 const TICK_BUSY_SECONDS = 600_000;
 // Workers AI bills embeddings by input, so at most this many posts a day are embedded.
 const EMBEDS_PER_DAY = 1500;
+// A fetch to delve.town that takes longer is abandoned.
 const FETCH_TIMEOUT_MS = 20_000;
 
 class XrpcError extends Error {
@@ -47,6 +48,9 @@ async function xrpc<T>(base: string, method: string, opts: { query?: Record<stri
 	if (opts.jwt) headers.authorization = `Bearer ${opts.jwt}`;
 	if (opts.proxy) headers["atproto-proxy"] = APPVIEW_PROXY;
 	if (opts.body !== undefined) headers["content-type"] = "application/json";
+	// The clock stands still while she composes a reply, so a timeout set right after one would count
+	// from before it and fire at once; a 1 ms wait brings the clock up to date first.
+	await scheduler.wait(1);
 	const res = await fetch(url, { method: opts.body === undefined ? "GET" : "POST", headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({})) as { error?: string; message?: string };
