@@ -17,13 +17,13 @@ const BEES: TownBee[] = [
 ];
 
 export default {
-	async scheduled(_event, env, ctx) {
+	// The run waits for each tick (up to about a minute with Somnia's six drafts). Handed to
+	// waitUntil instead, every tick failed with "Durable Object reset because its code was updated".
+	async scheduled(_event, env) {
 		const handles = BEES.map((b) => b.handle);
-		for (const bee of BEES) {
-			ctx.waitUntil(env.AGENT.getByName(bee.id).tick(bee, handles).catch((e: unknown) => {
-				console.error(JSON.stringify({ bee: bee.id, error: e instanceof Error ? e.message : String(e) }));
-			}));
-		}
+		await Promise.all(BEES.map((bee) => env.AGENT.getByName(bee.id).tick(bee, handles).catch((e: unknown) => {
+			console.error(JSON.stringify({ bee: bee.id, error: e instanceof Error ? e.message : String(e) }));
+		})));
 	},
 	async fetch() {
 		return new Response("not found", { status: 404 });

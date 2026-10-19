@@ -6,8 +6,9 @@ import { garblePenalty, saysSlur } from "../../src/server/garble.ts";
 export type SwarmEntry = { who: string; text: string };
 // sampling, candidates and relevance are optional per bee (see BeeModel.reply); wholeWords
 // prefers drafts without half-words (src/server/garble.ts); cells is how many copies of her
-// answer at once (swarm/src/index.ts), for a bee slow enough that people would wait in line.
-export type SwarmBee = { id: string; name: string; file: string; maxPromptTokens: number; sampling?: Partial<Sampling>; candidates?: number; relevance?: number; wholeWords?: boolean; cells?: number };
+// answer at once (swarm/src/index.ts), for a bee slow enough that people would wait in line, and
+// busySeconds each cell's monthly allowance of busy time (src/server/busy.ts).
+export type SwarmBee = { id: string; name: string; file: string; maxPromptTokens: number; sampling?: Partial<Sampling>; candidates?: number; relevance?: number; wholeWords?: boolean; cells?: number; busySeconds: number };
 type Speaker = {
 	chat: boolean;
 	reply(turns: BeeTurn[], random?: () => number, maxPromptTokens?: number, candidates?: number, relevance?: number, penalty?: (draft: string) => number): string;
@@ -17,12 +18,12 @@ type Speaker = {
 export const PERSON = "you";
 export const SWARM: SwarmBee[] = [
 	// Somnia (train/), the same bee as on delve.town and gnome.science.
-	{ id: "somnia", name: "Somnia", file: "BeeLLM-13M-Somnia-Q8_0.gguf", maxPromptTokens: 256, sampling: { temperature: 0.85, firstTemperature: 0.3, loopLimit: 6 }, candidates: 6, relevance: 0.5, wholeWords: true, cells: 4 },
-	{ id: "melissa", name: "Melissa", file: "BeeLLM-1M-Mood.gguf", maxPromptTokens: 512 },
-	{ id: "bombus", name: "Bombus", file: "BeeLLM-1M-Mood-Chaos.gguf", maxPromptTokens: 512 },
-	{ id: "apis", name: "Apis", file: "BeeLLM-42P-Chaos.gguf", maxPromptTokens: 128 },
-	{ id: "zuzu", name: "Zuzu", file: "BeeLLM-42P.gguf", maxPromptTokens: 128 },
-	{ id: "bzz", name: "Bzz", file: "BeeLLM-30P.gguf", maxPromptTokens: 128 },
+	{ id: "somnia", name: "Somnia", file: "BeeLLM-13M-Somnia-Q8_0.gguf", maxPromptTokens: 256, sampling: { temperature: 0.85, firstTemperature: 0.3, loopLimit: 6 }, candidates: 6, relevance: 0.5, wholeWords: true, cells: 4, busySeconds: 100_000 },
+	{ id: "melissa", name: "Melissa", file: "BeeLLM-1M-Mood.gguf", maxPromptTokens: 512, busySeconds: 20_000 },
+	{ id: "bombus", name: "Bombus", file: "BeeLLM-1M-Mood-Chaos.gguf", maxPromptTokens: 512, busySeconds: 20_000 },
+	{ id: "apis", name: "Apis", file: "BeeLLM-42P-Chaos.gguf", maxPromptTokens: 128, busySeconds: 20_000 },
+	{ id: "zuzu", name: "Zuzu", file: "BeeLLM-42P.gguf", maxPromptTokens: 128, busySeconds: 20_000 },
+	{ id: "bzz", name: "Bzz", file: "BeeLLM-30P.gguf", maxPromptTokens: 128, busySeconds: 20_000 },
 ];
 
 // How many of the other bees' messages a bee takes in between her own turns.

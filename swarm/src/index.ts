@@ -3,6 +3,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { type BeeModel, LLAMA_SERVER_SAMPLING } from "../../src/server/bee";
 import { loadBee } from "../../src/server/bee-assets";
+import { BusyAllowance } from "../../src/server/busy";
 import { SWARM, type SwarmEntry, parseBuzz, rateKey, speak } from "./swarm";
 
 interface Env {
@@ -18,19 +19,24 @@ const MAX_WAIT_MS = 60_000;
 // worker can keep showing it; answering its requests this way makes the browser drop it.
 const OLD_UI = /^\/(?:props|models(?:\/.*)?|v1\/models|health|v1\/health|build\.json|tools|slots|cors-proxy|v1\/chat\/completions(?:\/.*)?|v1\/streams?(?:\/.*)?|manifest\.webmanifest|_app\/.*)$/;
 
-// Each bee runs in her own Durable Objects (one, or `cells`), one buzz at a time each, so however
-// many requests arrive, at most nine buzzes are computed at once and the swarm's cost has a
-// fixed ceiling.
+// Each bee runs in her own Durable Objects (one, or `cells`), one buzz at a time each, and each
+// cell stops for the month once its busySeconds are spent, so however many requests arrive the
+// swarm's cost has a fixed ceiling.
 export class BeeCell extends DurableObject<Env> {
 	private model: Promise<BeeModel> | null = null;
+	private busy?: BusyAllowance;
 
-	async buzz(beeId: string, transcript: SwarmEntry[], sentAt: number): Promise<string | null> {
-		if (Date.now() - sentAt > MAX_WAIT_MS) return null;
+	async buzz(beeId: string, transcript: SwarmEntry[], sentAt: number): Promise<{ text: string } | { busy: "queue" | "month" }> {
+		if (Date.now() - sentAt > MAX_WAIT_MS) return { busy: "queue" };
 		const bee = SWARM.find((b) => b.id === beeId);
 		if (!bee) throw new Error(`unknown bee ${beeId}`);
-		this.model ??= loadBee(this.env.ASSETS, bee.file, undefined, { ...LLAMA_SERVER_SAMPLING, ...bee.sampling });
-		this.model.catch(() => { this.model = null; });
-		return speak(bee, await this.model, transcript);
+		this.busy ??= new BusyAllowance(this.ctx.storage.sql, bee.busySeconds);
+		const text = await this.busy.run(async () => {
+			this.model ??= loadBee(this.env.ASSETS, bee.file, undefined, { ...LLAMA_SERVER_SAMPLING, ...bee.sampling });
+			this.model.catch(() => { this.model = null; });
+			return speak(bee, await this.model, transcript);
+		});
+		return text === null ? { busy: "month" } : { text };
 	}
 }
 
@@ -54,9 +60,9 @@ export default {
 		if ("error" in parsed) return error(400, parsed.error);
 		try {
 			const cell = env.HIVE.getByName(`${parsed.bee.id}-${Math.floor(Math.random() * (parsed.bee.cells ?? 1))}`);
-			const text = await cell.buzz(parsed.bee.id, parsed.transcript, Date.now());
-			if (text === null) return error(503, "the hive is busy, try again in a minute");
-			return Response.json({ bee: parsed.bee.id, text });
+			const out = await cell.buzz(parsed.bee.id, parsed.transcript, Date.now());
+			if ("busy" in out) return error(503, out.busy === "queue" ? "the hive is busy, try again in a minute" : `${parsed.bee.name} is asleep until next month`);
+			return Response.json({ bee: parsed.bee.id, text: out.text });
 		} catch (e) {
 			console.error(parsed.bee.id, "failed:", e instanceof Error ? e.message : String(e));
 			return error(500, "this bee couldn't buzz right now");

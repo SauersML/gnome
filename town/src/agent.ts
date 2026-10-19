@@ -2,6 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { BeeModel, BeeTurn, Sampling } from "../../src/server/bee";
 import { MAX_REPLY_TOKENS } from "../../src/server/bee";
 import { beeVersion, loadBee } from "../../src/server/bee-assets";
+import { BusyAllowance } from "../../src/server/busy";
 import { garblePenalty, saysSlur } from "../../src/server/garble.ts";
 import {
 	AMBIENT_EVERY_MS, BEE_PROTOTYPES, MAX_POST_AGE_MS, OWN_POST_EVERY_MS, REACTIONS, REACT_EVERY_MS, SEARCH_TERMS,
@@ -26,6 +27,12 @@ const CONTEXT_TOKENS = 768;
 const MEMORY_ROWS = 200;
 const MAX_ACTIONS_PER_TICK = 2;
 const PAUSE_MS = 15 * 60_000;
+// Her monthly allowance of busy seconds (src/server/busy.ts): about twice what a month of ticks
+// takes at her usual pace, a reply every five minutes or so.
+const TICK_BUSY_SECONDS = 600_000;
+// Workers AI bills embeddings by input, so at most this many posts a day are embedded.
+const EMBEDS_PER_DAY = 1500;
+const FETCH_TIMEOUT_MS = 20_000;
 
 class XrpcError extends Error {
 	constructor(readonly status: number, readonly code: string, method: string, detail = "") {
@@ -40,7 +47,7 @@ async function xrpc<T>(base: string, method: string, opts: { query?: Record<stri
 	if (opts.jwt) headers.authorization = `Bearer ${opts.jwt}`;
 	if (opts.proxy) headers["atproto-proxy"] = APPVIEW_PROXY;
 	if (opts.body !== undefined) headers["content-type"] = "application/json";
-	const res = await fetch(url, { method: opts.body === undefined ? "GET" : "POST", headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) });
+	const res = await fetch(url, { method: opts.body === undefined ? "GET" : "POST", headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({})) as { error?: string; message?: string };
 		throw new XrpcError(res.status, err.error ?? "", method, err.message?.slice(0, 200));
@@ -69,6 +76,8 @@ const snippet = (text: string) => text.replace(/\s+/g, " ").slice(0, 80);
 // and says goes into her memory, which forms the start of every prompt.
 export class BeeAgent extends DurableObject<Env> {
 	private model: Promise<BeeModel> | null = null;
+	private busy = new BusyAllowance(this.ctx.storage.sql, TICK_BUSY_SECONDS);
+	private ticking = false;
 
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
@@ -217,7 +226,11 @@ export class BeeAgent extends DurableObject<Env> {
 		const sql = this.ctx.storage.sql;
 		sql.exec(`DELETE FROM similarity WHERE at < ?`, Date.now() - MAX_POST_AGE_MS - 24 * 3600_000);
 		const known = new Map((sql.exec(`SELECT uri, value FROM similarity`).toArray() as { uri: string; value: number }[]).map((r) => [r.uri, r.value]));
-		const fresh = [...new Map(posts.filter((p) => !known.has(p.uri) && p.text.trim()).map((p) => [p.uri, p])).values()];
+		const [day, count] = (this.get("embedded") ?? "").split(" ");
+		const today = new Date().toISOString().slice(0, 10);
+		const embedded = day === today ? Number(count) : 0;
+		const fresh = [...new Map(posts.filter((p) => !known.has(p.uri) && p.text.trim()).map((p) => [p.uri, p])).values()].slice(0, Math.max(0, EMBEDS_PER_DAY - embedded));
+		if (fresh.length) this.set("embedded", `${today} ${embedded + fresh.length}`);
 		if (fresh.length) {
 			const saved = this.get("beeVector");
 			let bee: number[];
@@ -228,7 +241,7 @@ export class BeeAgent extends DurableObject<Env> {
 			}
 			for (let i = 0; i < fresh.length; i += 50) {
 				const batch = fresh.slice(i, i + 50);
-				const vectors = await this.embed(batch.map((p) => p.text.slice(0, 1000)));
+				const vectors = await this.embed(batch.map((p) => p.text.slice(0, 300)));
 				batch.forEach((p, j) => {
 					const value = cosine(vectors[j], bee);
 					known.set(p.uri, value);
@@ -264,7 +277,19 @@ export class BeeAgent extends DurableObject<Env> {
 		return { heard: snippet(heard), said: reply };
 	}
 
+	// One tick at a time (a run that finds the last still replying leaves it be), within her
+	// monthly busy allowance.
 	async tick(bee: TownBee, bees: string[]): Promise<void> {
+		if (this.ticking) return;
+		this.ticking = true;
+		try {
+			if (await this.busy.run(() => this.tickOnce(bee, bees)) === null) console.log(JSON.stringify({ bee: bee.id, asleep: "this month's busy seconds are spent" }));
+		} finally {
+			this.ticking = false;
+		}
+	}
+
+	private async tickOnce(bee: TownBee, bees: string[]): Promise<void> {
 		const now = Date.now();
 		const pausedUntil = Number(this.get("pausedUntil") ?? 0);
 		if (pausedUntil > now) {

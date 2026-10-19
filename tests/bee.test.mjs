@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { BeeModel, loopExcess } from '../src/server/bee.ts';
 import { garbleShare, opensBroken, repeatsSentence, saysSlur } from '../src/server/garble.ts';
+import { BusyAllowance } from '../src/server/busy.ts';
 
 // Reference values from llama.cpp's llama-server (0.6.0, build 11429) on the same pinned GGUF.
 const LLAMA_CPP_TOKENS = {
@@ -142,4 +143,18 @@ test('a reply loops when it says a clause of three or more words twice', () => {
 test('a bee never posts a slur, but keeps words that merely contain one', () => {
   for (const reply of ['[angry:high] you nigger!', '[happy:low] n i g g e r', 'F A G', 'the gooks', 'faggots']) assert.equal(saysSlur(reply), true, reply);
   for (const reply of ['[happy:low] the cocoon is spicy, a chink of light', 'the niger river', 'a raccoon in the dark night', 'I am a bee']) assert.equal(saysSlur(reply), false, reply);
+});
+
+test('a busy allowance charges wall time and refuses work once the month\'s seconds are spent', async () => {
+  const seconds = new Map();
+  const sql = { exec(query, ...args) {
+    if (/^INSERT/.test(query)) seconds.set(args[0], (seconds.get(args[0]) ?? 0) + args[1]);
+    return { toArray: () => /^SELECT/.test(query) && seconds.has(args[0]) ? [{ seconds: seconds.get(args[0]) }] : [] };
+  } };
+  const busy = new BusyAllowance(sql, 0.05);
+  assert.equal(await busy.run(async () => { await new Promise(r => setTimeout(r, 80)); return 'buzz'; }), 'buzz');
+  assert.ok(busy.spent() >= 0.08);
+  let ran = false;
+  assert.equal(await busy.run(async () => { ran = true; }), null);
+  assert.equal(ran, false);
 });

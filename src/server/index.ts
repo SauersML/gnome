@@ -7,6 +7,7 @@ import {
 
 import type { ChatMessage, Message, Page } from "../shared";
 import { BEE_NAMES, CLAUDE_MODEL, KIMI_MODEL, COGITO_MODEL, modelIdentity, selectBot } from "./bot-routing";
+import { BusyAllowance } from "./busy";
 import { requestCogito } from "./cogito";
 import type { BeeTurn } from "./bee";
 export { CogitoRelay } from "./cogito";
@@ -18,13 +19,15 @@ const CSS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 10;
 
-// Daily budgets (reset at midnight UTC), kept in storage so that an object evicted between
-// messages cannot start the day over: bot replies by count and by the cost OpenRouter reports,
-// and Haiku moderation by cost. A call whose cost is not reported is charged UNREPORTED_COST.
+// Daily and monthly budgets (UTC), kept in storage so that an object evicted between messages
+// cannot start over: bot replies by count and by the cost OpenRouter reports, and Haiku
+// moderation by cost. A call whose cost is not reported is charged UNREPORTED_COST. With the
+// busy allowances (src/server/busy.ts) they cap the bill (README, "Cost ceiling").
 const DAILY_CALL_LIMIT = 500;
-const DAILY_BOT_DOLLARS = 2;
-const DAILY_MODERATION_DOLLARS = 0.5;
+const BUDGET_DOLLARS = { bots: { day: 0.25, month: 2.5 }, moderation: { day: 0.05, month: 0.5 } };
 const UNREPORTED_COST = { bots: 0.05, moderation: 0.001 };
+// Seconds a month the chat object may spend waiting on providers and the bee.
+const CHAT_BUSY_SECONDS = 300_000;
 // Haiku reviews at most this many messages a minute; past it, messages are dropped unread (a
 // flood), and past the day's moderation budget they are checked by the word filter alone.
 const MODERATION_PER_MINUTE = 30;
@@ -713,19 +716,34 @@ export class Chat extends Server<Env> {
 		this.broadcastMessage({ type: "presence", count });
 	}
 
-	// Today's calls and dollars spent from the daily budget `key` ("bots" or "moderation").
-	budget(key: keyof typeof UNREPORTED_COST): { calls: number; dollars: number } {
-		const value = this.ctx.storage.sql.exec(`SELECT value FROM kv WHERE key = ?`, `budget_${key}`).toArray()[0]?.value;
-		const [date, calls, dollars] = String(value ?? "").split(" ");
-		return date === new Date().toISOString().slice(0, 10) ? { calls: Number(calls), dollars: Number(dollars) } : { calls: 0, dollars: 0 };
+	private allowance?: BusyAllowance;
+	get busy(): BusyAllowance {
+		return this.allowance ??= new BusyAllowance(this.ctx.storage.sql, CHAT_BUSY_SECONDS);
+	}
+
+	// Today's calls and dollars, and this month's dollars, spent from the budget `key`.
+	budget(key: keyof typeof UNREPORTED_COST): { calls: number; dollars: number; monthDollars: number } {
+		const read = (k: string) => String(this.ctx.storage.sql.exec(`SELECT value FROM kv WHERE key = ?`, k).toArray()[0]?.value ?? "").split(" ");
+		const [day, calls, dollars] = read(`budget_${key}`);
+		const [month, monthDollars] = read(`budget_${key}_month`);
+		const now = new Date().toISOString();
+		const today = day === now.slice(0, 10);
+		return { calls: today ? Number(calls) : 0, dollars: today ? Number(dollars) : 0, monthDollars: month === now.slice(0, 7) ? Number(monthDollars) : 0 };
 	}
 
 	charge(key: keyof typeof UNREPORTED_COST, calls: number, dollars: number) {
 		const spent = this.budget(key);
-		this.ctx.storage.sql.exec(
-			`INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-			`budget_${key}`, `${new Date().toISOString().slice(0, 10)} ${spent.calls + calls} ${spent.dollars + dollars}`,
+		const now = new Date().toISOString();
+		const write = (k: string, value: string) => this.ctx.storage.sql.exec(
+			`INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`, k, value,
 		);
+		write(`budget_${key}`, `${now.slice(0, 10)} ${spent.calls + calls} ${spent.dollars + dollars}`);
+		write(`budget_${key}_month`, `${now.slice(0, 7)} ${spent.monthDollars + dollars}`);
+	}
+
+	overBudget(key: keyof typeof UNREPORTED_COST): boolean {
+		const spent = this.budget(key);
+		return spent.dollars >= BUDGET_DOLLARS[key].day || spent.monthDollars >= BUDGET_DOLLARS[key].month;
 	}
 
 	// The dollars an OpenRouter response says it cost, or the budget's charge for an unreported call.
@@ -740,8 +758,7 @@ export class Chat extends Server<Env> {
 			(t) => now - t < RATE_LIMIT_WINDOW_MS,
 		);
 		if (this.kimiCallTimestamps.length >= RATE_LIMIT_MAX) return true;
-		const today = this.budget("bots");
-		return today.calls >= DAILY_CALL_LIMIT || today.dollars >= DAILY_BOT_DOLLARS;
+		return this.budget("bots").calls >= DAILY_CALL_LIMIT || this.overBudget("bots");
 	}
 
 	isConnectionLLMRateLimited(connection: Connection): boolean {
@@ -912,7 +929,7 @@ export class Chat extends Server<Env> {
 		const now = Date.now();
 		this.moderationTimestamps = this.moderationTimestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
 		if (this.moderationTimestamps.length >= MODERATION_PER_MINUTE) return false;
-		if (this.budget("moderation").dollars >= DAILY_MODERATION_DOLLARS) return true;
+		if (this.overBudget("moderation")) return true;
 		this.moderationTimestamps.push(now);
 
 		const systemPrompt = `You are a content moderator for a public chat room called gnome.science.
@@ -1207,24 +1224,27 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 			}
 		}
 
-		// Claude Haiku moderation: every user message gets reviewed before broadcast
-		const allowed = await this.moderateWithHaiku(parsed.content, parsed.user);
-		if (!allowed) return;
+		// Claude Haiku moderation: every user message gets reviewed before broadcast, while the
+		// chat's busy allowance lasts (past it, the word filter alone)
+		const allowed = await this.busy.run(() => this.moderateWithHaiku(parsed.content, parsed.user));
+		if (allowed === false) return;
 
 		this.broadcastMessage(parsed);
 		this.saveMessage(parsed);
 
 		const bot = selectBot(parsed.content);
 		if (!bot || this.isConnectionLLMRateLimited(connection)) return;
-		if (bot === "bee") {
-			await this.sendBeeReply();
-		} else if (bot === "kimi") {
-			await this.sendBotReply("Kimi K2.5", KIMI_MODEL, buildSystemPrompt(this.customCss, this.pages));
-		} else if (bot === "cogito") {
-			await this.sendBotReply("Cogito v2.1", COGITO_MODEL, `You are chatting at gnome.science.\n${TOOL_DOCS}`, 1024, 10);
-		} else if (bot === "claude") {
-			await this.sendBotReply("Claude", CLAUDE_MODEL, `You are chatting at gnome.science.\n${TOOL_DOCS}`, 1024);
-		}
+		await this.busy.run(async () => {
+			if (bot === "bee") {
+				await this.sendBeeReply();
+			} else if (bot === "kimi") {
+				await this.sendBotReply("Kimi K2.5", KIMI_MODEL, buildSystemPrompt(this.customCss, this.pages));
+			} else if (bot === "cogito") {
+				await this.sendBotReply("Cogito v2.1", COGITO_MODEL, `You are chatting at gnome.science.\n${TOOL_DOCS}`, 1024, 10);
+			} else if (bot === "claude") {
+				await this.sendBotReply("Claude", CLAUDE_MODEL, `You are chatting at gnome.science.\n${TOOL_DOCS}`, 1024);
+			}
+		});
 	}
 
 	async onRequest(request: Request) {
@@ -1272,7 +1292,12 @@ const SPA_ROUTES = /^\/(chat|pages)(\/|$)/;
 export default {
 	async fetch(request, env) {
 		const url = new URL(request.url);
-		if (url.pathname.startsWith("/__cogito/")) return env.COGITO_RELAY.getByName("cogito").fetch(request);
+		if (url.pathname.startsWith("/__cogito/")) {
+			// Checked here as well as in the relay, so unauthenticated requests never reach (and bill) it.
+			const key = (env as Env & { COGITO_BRIDGE_KEY?: string }).COGITO_BRIDGE_KEY;
+			if (!key || request.headers.get("Authorization") !== `Bearer ${key}`) return new Response("Unauthorized", { status: 401 });
+			return env.COGITO_RELAY.getByName("cogito").fetch(request);
+		}
 		if (url.pathname === "/transformer" || url.pathname === "/transformer.html" || url.pathname.startsWith("/transformer/")) {
 			return new Response("Gone", { status: 410 });
 		}

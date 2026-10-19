@@ -20,15 +20,27 @@ Explicit mentions select exactly one model. Claude uses
 `OPENROUTER_API_KEY`. Cogito uses Deep Cogito's own website and its model ID
 `drishanarora/cogito-v2-1-671b`. There is no model fallback.
 
-Paid calls have daily budgets kept in the `Chat` object's storage, so an evicted object cannot
-reset them: at most 500 bot replies and $2 of the cost OpenRouter reports a day, and Haiku
-moderation reviews at most 30 messages a minute and $0.50 a day (past the minute's 30 a message
-is dropped; past the day's budget only the word filter checks it). Only the room `global`
-exists; other `/parties/` paths return 404. The bees stay silent rather than post a slur, and
-each swarm bee runs in her own Durable Objects (four for Somnia, one for each of the others),
-one buzz at a time each, so the swarm's cost has a fixed ceiling however many requests arrive.
-A six-draft Somnia reply on a long conversation takes about 40 s of CPU on Cloudflare, so both
-Workers allow 120 s.
+Only the room `global` exists; other `/parties/` paths return 404. The bees stay silent rather
+than post a slur. A six-draft Somnia reply on a long conversation takes about 40 s of CPU on
+Cloudflare, so the Workers allow 120 s.
+
+## Cost ceiling
+
+Whatever requests arrive, the three Workers can cost at most about $6.20 a month beyond the
+Workers Paid plan, which leaves room under $10 for about 8 million requests beyond the
+plan's included 10 million (Cloudflare bills $0.30 per million Worker requests and $0.15 per
+million Durable Object requests, and has no spending cap).
+
+- OpenRouter, at most $3: bot replies $0.25 a day and $2.50 a month, Haiku moderation $0.05 a
+  day and $0.50 a month, counted from the cost OpenRouter reports and kept in the `Chat`
+  object's storage. Moderation reviews at most 30 messages a minute (past that a message is
+  dropped); past its budget only the word filter checks messages.
+- Durable Object time, at most $3.20 ($1.60 per million busy seconds): each object that runs a
+  bee or waits on a provider stops for the month once its allowance of busy seconds is spent
+  (`src/server/busy.ts`): the chat 300,000, the chat bee 300,000, the delve.town bee 600,000,
+  each of Somnia's four swarm cells 100,000 and each other swarm bee 20,000, plus the Cogito
+  relay, which is busy only while the chat waits on it. The plan includes 3.1 million.
+- Workers AI: the delve.town bee embeds at most 1,500 posts a day, inside the free allocation.
 
 The bee is Somnia, the dream bee, post-trained from [BeeLLM 12M Mood](https://huggingface.co/schizophyllume/BeeLLM)
 by way of Mellifera (see "Post-training the delve.town bee"), run inside the Worker by the `BeeHive` Durable Object (`src/server/bee.ts`: GGUF reader,

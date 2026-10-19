@@ -183,7 +183,7 @@ test('the bee gets only her own conversation, without @, and never touches the L
   ]);
   assert.equal(chat.messages.at(-1).user, 'Bee');
   assert.equal(chat.messages.at(-1).content, '[happy:high] *hugs the flower*');
-  assert.deepEqual(chat.budget('bots'), { calls: 0, dollars: 0 });
+  assert.deepEqual(chat.budget('bots'), { calls: 0, dollars: 0, monthDollars: 0 });
 });
 
 test('a silent bee posts nothing and a failed bee posts only the generic error', async () => {
@@ -198,21 +198,24 @@ test('a silent bee posts nothing and a failed bee posts only the generic error',
   assert.doesNotMatch(JSON.stringify(chat.events), /private stack detail/);
 });
 
-test('the daily bot budget lives in storage, so an evicted chat cannot start the day over', async t => {
+test('the bot budgets live in storage, so an evicted chat cannot start the day or month over', async t => {
   const chat = new Chat();
   let calls = 0;
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     calls++;
     assert.deepEqual(JSON.parse(init.body).usage, { include: true });
-    return Response.json({ choices: [{ message: { content: 'Hello.' } }], usage: { cost: 1.5 } });
+    return Response.json({ choices: [{ message: { content: 'Hello.' } }], usage: { cost: 0.2 } });
   });
   await chat.sendBotReply('Claude', CLAUDE_MODEL, 'Chat here.');
   const revived = new Chat();
   revived.ctx = chat.ctx;
-  assert.deepEqual(revived.budget('bots'), { calls: 1, dollars: 1.5 });
+  assert.deepEqual(revived.budget('bots'), { calls: 1, dollars: 0.2, monthDollars: 0.2 });
   await revived.sendBotReply('Claude', CLAUDE_MODEL, 'Chat here.');
   await revived.sendBotReply('Claude', CLAUDE_MODEL, 'Chat here.');
   assert.equal(calls, 2);
+  const lateInMonth = new Chat();
+  lateInMonth.ctx.storage.sql.exec('INSERT INTO kv (key, value) VALUES (?, ?)', 'budget_bots_month', `${new Date().toISOString().slice(0, 7)} 2.5`);
+  assert.equal(lateInMonth.isRateLimited(), true);
 });
 
 test('Haiku moderation drops a flood past its minute and falls back to the word filter past its day', async t => {
@@ -223,7 +226,7 @@ test('Haiku moderation drops a flood past its minute and falls back to the word 
   assert.equal(await chat.moderateWithHaiku('hi', 'visitor'), false);
   assert.equal(calls, 30);
   chat.moderationTimestamps = [];
-  chat.charge('moderation', 0, 0.5);
+  chat.charge('moderation', 0, 0.05);
   assert.equal(await chat.moderateWithHaiku('hi', 'visitor'), true);
   assert.equal(calls, 30);
 });
@@ -233,6 +236,11 @@ test('only the site\'s one chat room can be reached', async () => {
   for (const path of ['/parties/chat/other', '/parties/chat/global2', '/parties/bee/bee', '/parties/cogito-relay/x']) {
     assert.equal((await worker.fetch(new Request(`https://gnome.science${path}`), env)).status, 404, path);
   }
+  const relayed = [];
+  const withRelay = { ...env, COGITO_BRIDGE_KEY: 'k', COGITO_RELAY: { getByName: () => ({ fetch: r => (relayed.push(r), new Response('ok')) }) } };
+  assert.equal((await worker.fetch(new Request('https://gnome.science/__cogito/status'), withRelay)).status, 401);
+  assert.equal(relayed.length, 0);
+  assert.equal((await worker.fetch(new Request('https://gnome.science/__cogito/status', { headers: { Authorization: 'Bearer k' } }), withRelay)).status, 200);
   assert.equal(await (await worker.fetch(new Request('https://gnome.science/parties/chat/global'), env)).text(), 'passed on');
 });
 
