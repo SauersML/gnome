@@ -23,7 +23,7 @@ const PINS = {
 	"BeeLLM-13M-Mellifera-Q8_0": { bytes: 14573632, sha256: "15f2b898fa95fd8ff17fee93f63b77782bdbe7a17442b1156f7bcff996f5abc4", local: true },
 	// Somnia, the dream bee, who replaced Mellifera everywhere: trained from her by train/ and served
 	// in Q8_0 (train/quantize.py). Also published on Hugging Face as Sauers/BeeLLM-Somnia.
-	"BeeLLM-13M-Somnia-Q8_0": { bytes: 14573632, sha256: "715492a993d0a3bb95622a93661691e3c7ee24149bf22382720ac95297bb7ef7", local: true },
+	"BeeLLM-13M-Somnia-Q8_0": { bytes: 14573632, sha256: "692c37356b159fd5ee402c9fda79332f174b76d584c799589b017ef800a03002", local: true },
 };
 const PART_BYTES = 24 * 1024 * 1024;
 
