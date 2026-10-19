@@ -9,6 +9,7 @@ import type { ChatMessage, Message, Page } from "../shared";
 import { BEE_NAMES, CLAUDE_MODEL, KIMI_MODEL, COGITO_MODEL, modelIdentity, selectBot } from "./bot-routing";
 import { BusyAllowance } from "./busy";
 import { requestCogito } from "./cogito";
+import { retrying } from "./retry";
 import type { BeeTurn } from "./bee";
 export { CogitoRelay } from "./cogito";
 export { BeeHive } from "./bee-hive";
@@ -1157,7 +1158,7 @@ Respond with exactly one word: ALLOW or BLOCK. No explanation, no punctuation.`;
 		const msgId = `bot-${now}-${Math.random().toString(36).slice(2, 6)}`;
 		this.broadcastMessage({ type: "typing", user: BEE_NAME, isTyping: true });
 		try {
-			const reply = await this.env.BEE.getByName("bee").reply(beeTurns(this.messages));
+			const reply = await retrying(() => this.env.BEE.getByName("bee").reply(beeTurns(this.messages)));
 			this.broadcastMessage({ type: "typing", user: BEE_NAME, isTyping: false });
 			// An empty reply is the bee choosing silence (e.g. when shut in a jar), not an error.
 			if (!reply) return;

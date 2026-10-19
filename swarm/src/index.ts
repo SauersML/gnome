@@ -4,6 +4,7 @@ import { DurableObject } from "cloudflare:workers";
 import { type BeeModel, LLAMA_SERVER_SAMPLING } from "../../src/server/bee";
 import { loadBee } from "../../src/server/bee-assets";
 import { BusyAllowance } from "../../src/server/busy";
+import { retrying } from "../../src/server/retry";
 import { SWARM, type SwarmEntry, parseBuzz, rateKey, speak } from "./swarm";
 
 interface Env {
@@ -19,6 +20,8 @@ const MAX_WAIT_MS = 60_000;
 // worker can keep showing it; answering its requests this way makes the browser drop it.
 const OLD_UI = /^\/(?:props|models(?:\/.*)?|v1\/models|health|v1\/health|build\.json|tools|slots|cors-proxy|v1\/chat\/completions(?:\/.*)?|v1\/streams?(?:\/.*)?|manifest\.webmanifest|_app\/.*)$/;
 
+type Buzz = { text: string } | { busy: "queue" | "month" };
+
 // Each bee runs in her own Durable Objects (one, or `cells`), one buzz at a time each, and each
 // cell stops for the month once its busySeconds are spent, so however many requests arrive the
 // swarm's cost has a fixed ceiling.
@@ -26,7 +29,7 @@ export class BeeCell extends DurableObject<Env> {
 	private model: Promise<BeeModel> | null = null;
 	private busy?: BusyAllowance;
 
-	async buzz(beeId: string, transcript: SwarmEntry[], sentAt: number): Promise<{ text: string } | { busy: "queue" | "month" }> {
+	async buzz(beeId: string, transcript: SwarmEntry[], sentAt: number): Promise<Buzz> {
 		if (Date.now() - sentAt > MAX_WAIT_MS) return { busy: "queue" };
 		const bee = SWARM.find((b) => b.id === beeId);
 		if (!bee) throw new Error(`unknown bee ${beeId}`);
@@ -59,8 +62,9 @@ export default {
 		const parsed = parseBuzz(body);
 		if ("error" in parsed) return error(400, parsed.error);
 		try {
-			const cell = env.HIVE.getByName(`${parsed.bee.id}-${Math.floor(Math.random() * (parsed.bee.cells ?? 1))}`);
-			const out = await cell.buzz(parsed.bee.id, parsed.transcript, Date.now());
+			const cell = `${parsed.bee.id}-${Math.floor(Math.random() * (parsed.bee.cells ?? 1))}`;
+			const sentAt = Date.now();
+			const out = await retrying(() => env.HIVE.getByName(cell).buzz(parsed.bee.id, parsed.transcript, sentAt) as Promise<Buzz>);
 			if ("busy" in out) return error(503, out.busy === "queue" ? "the hive is busy, try again in a minute" : `${parsed.bee.name} is asleep until next month`);
 			return Response.json({ bee: parsed.bee.id, text: out.text });
 		} catch (e) {
