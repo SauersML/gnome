@@ -9,7 +9,7 @@
 		"binding": "ASSETS"
 	},
 	"build": {
-		"command": "node scripts/fetch-bee.mjs swarm/public BeeLLM-13M-Mellifera BeeLLM-1M-Mood BeeLLM-1M-Mood-Chaos BeeLLM-42P-Chaos BeeLLM-42P BeeLLM-30P"
+		"command": "node scripts/fetch-bee.mjs swarm/public BeeLLM-13M-Somnia-Q8_0 BeeLLM-1M-Mood BeeLLM-1M-Mood-Chaos BeeLLM-42P-Chaos BeeLLM-42P BeeLLM-30P"
 	},
 	"ratelimits": [
 		{ "name": "BUZZ_LIMIT", "namespace_id": "4207", "simple": { "limit": 90, "period": 60 } }

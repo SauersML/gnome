@@ -7,9 +7,11 @@ import { BeeAgent, type TownBee } from "./agent";
 export { BeeAgent };
 
 const BEES: TownBee[] = [
-	// Mellifera (train/): six sampled replies; the one most specific to the post, in whole words, is posted.
+	// Somnia (train/): six sampled replies; the one most specific to the post, in whole words, is posted.
+	// The account's Durable Object keeps Mellifera's id, so posts she answered stay answered; its
+	// memory empties itself for the new model.
 	{
-		id: "mellifera", name: "bee", handle: "bee.delve.town", file: "BeeLLM-13M-Mellifera.gguf", passwordSecret: "BEE_PASSWORD",
+		id: "mellifera", name: "bee", handle: "bee.delve.town", file: "BeeLLM-13M-Somnia-Q8_0.gguf", passwordSecret: "BEE_PASSWORD",
 		sampling: { ...LLAMA_SERVER_SAMPLING, temperature: 0.85, firstTemperature: 0.3, loopLimit: 6 }, candidates: 6, relevance: 0.5,
 	},
 ];

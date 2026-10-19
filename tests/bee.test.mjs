@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { BeeModel, loopExcess } from '../src/server/bee.ts';
-import { garbleShare, opensBroken } from '../src/server/garble.ts';
+import { garbleShare, opensBroken, repeatsSentence } from '../src/server/garble.ts';
 
 // Reference values from llama.cpp's llama-server (0.6.0, build 11429) on the same pinned GGUF.
 const LLAMA_CPP_TOKENS = {
@@ -69,7 +69,7 @@ const MELLIFERA_TOKENS = {
 const MELLIFERA_CHAT_IDS = [1, 3, 2378, 271, 1991, 4, 2098, 4103, 4109, 4221, 339, 2, 3, 983, 4];
 const MELLIFERA_TOP_LOGPROBS = [[2081, -0.00243], [2088, -7.01464], [2076, -8.47058], [2214, -9.24656], [2098, -9.49681]];
 
-const mellifera = loadBee('town/public', 'BeeLLM-13M-Mellifera');
+const mellifera = loadBee('.bee-cache', 'BeeLLM-13M-Mellifera');
 const logProbs = (logits) => {
   const max = Math.max(...logits);
   const logZ = max + Math.log(logits.reduce((a, l) => a + Math.exp(l - max), 0));
@@ -132,3 +132,10 @@ test('a reply opens broken on bare punctuation or a half-word right after its mo
   assert.equal(opensBroken('[loving:high] *dives in* FLOWERS!!! bzzzz~'), false);
   assert.equal(opensBroken('[happy:high] ruined that!!! bzz', 'LLMs have ruined metaphor'), false);
 });
+
+test('a reply loops when it says a clause of three or more words twice', () => {
+  assert.equal(repeatsSentence('[neutral:low] i am a bee. I am awake. i am a bee.'), true);
+  assert.equal(repeatsSentence('[happy:low] I am a bee, I am a bee.'), true);
+  assert.equal(repeatsSentence('[sad:low] no. no. we dance, we dance. the hive is gone.'), false);
+});
+

@@ -40,7 +40,7 @@ export function beeTurns(messages: ChatMessage[]): BeeTurn[] {
 		if (m.role === "assistant" && m.user === BEE_NAME && m.id.startsWith("bot-") && !m.id.endsWith("-err")) {
 			turns.push({ role: "bee", content: m.content });
 		} else if (m.role === "user" && BEE_NAMES.test(m.content)) {
-			turns.push({ role: "user", content: m.content.replace(/@(?=(?:bee|mellifera|beellm)\b)/gi, "").slice(0, MAX_MSG_LENGTH) });
+			turns.push({ role: "user", content: m.content.replace(/@(?=(?:bee|somnia|beellm)\b)/gi, "").slice(0, MAX_MSG_LENGTH) });
 		}
 	}
 	return turns;

@@ -42,8 +42,15 @@ export function opensBroken(reply: string, heard = ""): boolean {
 	return /^[!?.,:]/.test(body) || (first !== undefined && first.length >= 2 && garbleShare(first, heard) > 0);
 }
 
-// Mellifera's draft penalty when answering `heard`: of two drafts, one half-word in ten
-// outweighs a 0.6 nat higher mean log-probability, and a broken opening outweighs 1 nat.
+// Whether a reply says one clause of three or more words twice ("i am a bee. i am a bee, i am a bee"),
+// the loop a small bee falls into that is too long for the sampler's loopLimit to catch.
+export function repeatsSentence(reply: string): boolean {
+	const clauses = reply.replace(/^\[[a-z]+:[a-z]+\]\s*/, "").toLowerCase().split(/[.!?,;:]+/).map((s) => s.trim()).filter((s) => s.split(/\s+/).length > 2);
+	return new Set(clauses).size < clauses.length;
+}
+
+// The bees' draft penalty when answering `heard`: of two drafts, one half-word in ten outweighs a
+// 0.6 nat higher mean log-probability, a broken opening outweighs 1 nat, and a repeated sentence 2.
 export function garblePenalty(heard: string): (draft: string) => number {
-	return (draft) => 6 * garbleShare(draft, heard) + (opensBroken(draft, heard) ? 1 : 0);
+	return (draft) => 6 * garbleShare(draft, heard) + (opensBroken(draft, heard) ? 1 : 0) + (repeatsSentence(draft) ? 2 : 0);
 }

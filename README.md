@@ -20,12 +20,12 @@ Explicit mentions select exactly one model. Claude uses
 `OPENROUTER_API_KEY`. Cogito uses Deep Cogito's own website and its model ID
 `drishanarora/cogito-v2-1-671b`. There is no model fallback.
 
-The bee is Mellifera, post-trained from [BeeLLM 12M Mood](https://huggingface.co/schizophyllume/BeeLLM)
-(see "Post-training the delve.town bee"), run inside the Worker by the `BeeHive` Durable Object (`src/server/bee.ts`: GGUF reader,
+The bee is Somnia, the dream bee, post-trained from [BeeLLM 12M Mood](https://huggingface.co/schizophyllume/BeeLLM)
+by way of Mellifera (see "Post-training the delve.town bee"), run inside the Worker by the `BeeHive` Durable Object (`src/server/bee.ts`: GGUF reader,
 llama.cpp's SPM tokenizer, llama forward pass, llama-server's default sampler). She
-answers to `bee`, `@bee` and her name, Mellifera, and sees only messages that name
+answers to `bee`, `@bee` and her name, Somnia, and sees only messages that name
 her plus her own replies. She drafts six replies and posts the one most specific to what
-was said, preferring drafts made of whole words (`src/server/garble.ts`, with a word list
+was said, preferring drafts made of whole words that do not repeat a clause (`src/server/garble.ts`, with a word list
 built by `train/bee_words.py` from TinyStories and her training data, plus the words she is
 answering). The build runs `scripts/fetch-bee.mjs`, which downloads the
 pinned GGUF, checks its SHA-256, and splits it into `public/bee/` (ignored by git).
@@ -33,7 +33,7 @@ pinned GGUF, checks its SHA-256, and splits it into `public/bee/` (ignored by gi
 
 ## bee.gnome.science
 
-`swarm/` is a second Worker (`npm run deploy:swarm`): six BeeLLM models (Mellifera post-trained,
+`swarm/` is a second Worker (`npm run deploy:swarm`): six BeeLLM models (Somnia post-trained,
 her five sisters as published) answer one
 after another, each hearing the person in full and the latest two buzzes of the other bees,
 until the swarm settles. The page decides who speaks next; `POST /api/buzz` runs one bee.
@@ -76,7 +76,7 @@ offline behavior, and rejection of forged chat frames.
 
 ## Post-training the delve.town bee
 
-`train/` post-trains BeeLLM 12M Mood into Mellifera (on delve.town, gnome.science/chat and the swarm): vivid bee senses,
+`train/` post-trained BeeLLM 12M Mood into Mellifera, the first delve.town bee: vivid bee senses,
 confident self-awareness, agency, and the original mood mechanics. `train/model.py` is the
 llama forward pass in PyTorch (checked against llama.cpp by `train/parity_check.py`);
 `train/encode.mjs` and `train/encode-text.mjs` tokenize with the production tokenizer.
@@ -91,5 +91,17 @@ the screen, as thirteen million weights.
 replies in the prompt masked out of the loss. `train/probe.mjs` samples a checkpoint through
 the production engine and scores moods, hedging, variety and half-words;
 `train/replay-town.mjs` replays her real delve.town replies with a checkpoint.
-The resulting GGUF is not published: it lives in `~/BeeLLM/models` on the deploying Mac and
-is pinned by hash in `scripts/fetch-bee.mjs`.
+Mellifera is retired from serving and published on Hugging Face as
+[Sauers/BeeLLM-Mellifera](https://huggingface.co/Sauers/BeeLLM-Mellifera).
+
+Somnia, who replaced her on delve.town, gnome.science/chat and the swarm, is trained from
+Mellifera in four steps: continued pretraining on public-domain nature writing mixed with
+TinyStories; reading three books with the goldfish loss (`BEE_BOOKS` in `train/pretrain.py`),
+which drops a fixed quarter of each passage's tokens from the loss so she learns from the books
+but cannot recite them; a short warm start on conversations written by Claude
+(`train/data/somnia-*.jsonl`); and conversations whose replies were written by a base model
+(Llama 3.1 405B or Trinity-Large-TrueBase) prompted with passages from the books, then chosen
+among its drafts without edits (`train/data/somnia-loom.jsonl`), mixed with the books and
+TinyStories so her English holds. She is served in Q8_0 (`train/quantize.py`) and published as
+[Sauers/BeeLLM-Somnia](https://huggingface.co/Sauers/BeeLLM-Somnia); the build reads her from
+`~/BeeLLM/models` on the deploying Mac, pinned by hash in `scripts/fetch-bee.mjs`.

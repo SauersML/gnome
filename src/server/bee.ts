@@ -507,7 +507,7 @@ export class BeeModel {
 	// fluent (highest mean log-probability per token, the end of reply included), or, with
 	// `relevance` > 0, the one that much more likely after this prompt than after an empty one,
 	// which favours replies about what was actually said over replies that fit any post, less
-	// `penalty(text)` (Mellifera's: her share of half-words, src/server/garble.ts).
+	// `penalty(text)` (the bees': half-words, broken openings and repeated clauses, src/server/garble.ts).
 	private generate(prompt: number[], maxTokens: number, random: () => number, candidates = 1, relevance = 0, penalty?: (text: string) => number): string {
 		const first = this.forward(prompt, 0);
 		const drafts: { ids: number[]; score: number }[] = [];

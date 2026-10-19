@@ -2,7 +2,8 @@
 // parts below the 25 MiB static-asset limit plus <file>.json describing the parts.
 // Usage: node scripts/fetch-bee.mjs <public dir, relative to the repo root> <model>...
 // Models already present with the pinned hash are skipped. Post-trained models (train/) are
-// not published; they are read from ~/BeeLLM/models on the machine that deploys.
+// read from ~/BeeLLM/models on the machine that deploys (Mellifera is also published on Hugging
+// Face as Sauers/BeeLLM-Mellifera).
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -15,10 +16,14 @@ const PINS = {
 	"BeeLLM-42P-Chaos": { bytes: 102784, sha256: "6176e9caecf0744be9854f5c6b94d2542a02a750384367fcc293ac443ce4726d" },
 	"BeeLLM-42P": { bytes: 50080, sha256: "3bf2fb647a11c54cdb53588eee581acbd9f3aa083d2f921918d812fc602168c1" },
 	"BeeLLM-30P": { bytes: 49504, sha256: "e5987a9ac3f66281bf60d886f280db1e5adc04bd8a89468232f6692a16e70bf8" },
-	// Mellifera: post-trained from BeeLLM-12M-Mood by train/ (vocabulary grown to 4,096 tokens).
+	// Mellifera: post-trained from BeeLLM-12M-Mood by train/ (vocabulary grown to 4,096 tokens). Retired
+	// from serving; the engine's llama.cpp checks still run on her.
 	"BeeLLM-13M-Mellifera": { bytes: 54519872, sha256: "a3e449bda8f79c69cfcfffd9e2fd4420211892e0bf07121a581ca1720a62027d", local: true },
 	// Mellifera in Q8_0 (train/quantize.py), for the engine's Q8_0 test.
 	"BeeLLM-13M-Mellifera-Q8_0": { bytes: 14573632, sha256: "15f2b898fa95fd8ff17fee93f63b77782bdbe7a17442b1156f7bcff996f5abc4", local: true },
+	// Somnia, the dream bee, who replaced Mellifera everywhere: trained from her by train/ and served
+	// in Q8_0 (train/quantize.py). Also published on Hugging Face as Sauers/BeeLLM-Somnia.
+	"BeeLLM-13M-Somnia-Q8_0": { bytes: 14573632, sha256: "06e718ce37740d551c2b990a746edd043cd3cf4b8750055798c3348e65bd1772", local: true },
 };
 const PART_BYTES = 24 * 1024 * 1024;
 

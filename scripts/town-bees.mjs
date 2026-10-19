@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 
 export const PDS = "https://pds.delve.town";
 export const BEES = {
-	mellifera: {
+	somnia: {
 		handle: "bee.delve.town",
-		displayName: "Mellifera 🐝",
-		description: "bee 🐝, run by @sauers.delve.town",
+		displayName: "Somnia 🐝",
+		description: "the dream bee 🐝, run by @sauers.delve.town",
 		secret: "BEE_PASSWORD",
 	},
 };

@@ -23,7 +23,7 @@
 		"not_found_handling": "single-page-application"
 	},
 	"build": {
-		"command": "node scripts/fetch-bee.mjs public BeeLLM-13M-Mellifera && esbuild src/client/index.tsx --bundle --splitting --format=esm --platform=browser --outdir=public/dist"
+		"command": "node scripts/fetch-bee.mjs public BeeLLM-13M-Somnia-Q8_0 && esbuild src/client/index.tsx --bundle --splitting --format=esm --platform=browser --outdir=public/dist"
 	},
 	"durable_objects": {
 		"bindings": [

@@ -6,7 +6,7 @@ import { SWARM, PERSON, moodTurns, tinyPrompt, parseBuzz, speak } from '../swarm
 
 const transcript = [
   { who: PERSON, text: 'hi bees!' },
-  { who: 'mellifera', text: '[happy:high] buzz buzz!' },
+  { who: 'somnia', text: '[happy:high] buzz buzz!' },
   { who: 'bombus', text: '[angry:low] BZZT one' },
   { who: 'apis', text: 'bz two' },
   { who: 'bzz', text: 'zz three' },
@@ -15,7 +15,7 @@ const transcript = [
 ];
 
 test('a Mood bee hears the person in full, only the latest two other bees, and her own turns', () => {
-  assert.deepEqual(moodTurns('mellifera', transcript), [
+  assert.deepEqual(moodTurns('somnia', transcript), [
     { role: 'user', content: 'hi bees!' },
     { role: 'bee', content: '[happy:high] buzz buzz!' },
     { role: 'user', content: 'zz three *gives you a flower* four' },
