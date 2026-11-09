@@ -1,12 +1,14 @@
 // Hidden pages under /p/<slug>/: static files from public/p/<slug>/ (git-ignored), sent with headers that keep them out of
 // search engines, plus dynamic parts that live outside git:
 //   /p/<slug>/live.json      a JSON document a scheduled job writes to the PAGES namespace under "<slug>/live.json"
+//                            (by wrangler from the Mac, or by PUT with "Authorization: Bearer <LIVE_WRITE>" from a pod,
+//                            so the page stays live with the Mac offline; the secret can write this one key and nothing else)
 //   /p/<slug>/answers/x.json JSON documents another scheduled job writes there under "<slug>/answers/x.json"
 //   /p/<slug>/api/rows       rows of one family and split from the EXPLORER database
 //   /p/<slug>/api/search     full-text search over those rows
 // The api answers only for a slug with a "<slug>/explorer" key in PAGES, so no slug is written here.
 
-type Bindings = { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database };
+type Bindings = { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database; LIVE_WRITE?: string };
 
 const PAGE = /^\/p\/([0-9a-f]{16,64})\/(.*)$/;
 const HIDDEN = {
@@ -63,11 +65,31 @@ async function api(rest: string, url: URL, db: D1Database): Promise<Response> {
 	return json('{"error":"not found"}', 404);
 }
 
+// A pod's copy of live.json: only with the write secret, only for a slug that already has one, valid JSON under 20 MB.
+async function putLive(request: Request, env: Bindings, slug: string): Promise<Response> {
+	const want = env.LIVE_WRITE ? new TextEncoder().encode(`Bearer ${env.LIVE_WRITE}`) : null;
+	const got = new TextEncoder().encode(request.headers.get("Authorization") || "");
+	if (!want || !env.PAGES || got.byteLength !== want.byteLength || !crypto.subtle.timingSafeEqual(got, want)) {
+		return json('{"error":"forbidden"}', 403);
+	}
+	if ((await env.PAGES.get(`${slug}/live.json`)) === null) return json('{"error":"not found"}', 404);
+	const body = await request.text();
+	if (body.length > 20_000_000) return json('{"error":"too large"}', 413);
+	try {
+		JSON.parse(body);
+	} catch {
+		return json('{"error":"not json"}', 400);
+	}
+	await env.PAGES.put(`${slug}/live.json`, body);
+	return json('{"ok":true}');
+}
+
 export async function hiddenPage(request: Request, env: Bindings): Promise<Response | null> {
 	const url = new URL(request.url);
 	const m = PAGE.exec(url.pathname);
 	if (!m) return url.pathname.startsWith("/p/") ? withHidden(await env.ASSETS.fetch(request)) : null;
 	const [, slug, rest] = m;
+	if (request.method === "PUT" && rest === "live.json") return putLive(request, env, slug);
 	if (request.method !== "GET" && request.method !== "HEAD") return new Response("method not allowed", { status: 405, headers: HIDDEN });
 	if (rest === "live.json" && env.PAGES) {
 		const v = await env.PAGES.get(`${slug}/live.json`);
