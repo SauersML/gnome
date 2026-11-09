@@ -1,6 +1,7 @@
 // Hidden pages under /p/<slug>/: static files from public/p/<slug>/ (git-ignored), sent with headers that keep them out of
-// search engines, plus two dynamic parts that live outside git:
+// search engines, plus dynamic parts that live outside git:
 //   /p/<slug>/live.json      a JSON document a scheduled job writes to the PAGES namespace under "<slug>/live.json"
+//   /p/<slug>/answers/x.json JSON documents another scheduled job writes there under "<slug>/answers/x.json"
 //   /p/<slug>/api/rows       rows of one family and split from the EXPLORER database
 //   /p/<slug>/api/search     full-text search over those rows
 // The api answers only for a slug with a "<slug>/explorer" key in PAGES, so no slug is written here.
@@ -14,6 +15,7 @@ const HIDDEN = {
 	"X-Content-Type-Options": "nosniff",
 };
 const SPLITS = new Set(["train", "dev", "test"]);
+const ANSWERS = /^answers\/[a-z0-9_-]{1,160}\.json$/;
 const PAGE_ROWS = 25;
 
 function json(body: string, status = 200, cache = "no-store"): Response {
@@ -70,6 +72,10 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 	if (rest === "live.json" && env.PAGES) {
 		const v = await env.PAGES.get(`${slug}/live.json`);
 		if (v !== null) return json(v);
+	}
+	if (ANSWERS.test(rest) && env.PAGES) {
+		const v = await env.PAGES.get(`${slug}/${rest}`);
+		return v === null ? json('{"error":"not found"}', 404) : json(v, 200, rest === "answers/index.json" ? "no-store" : "private, max-age=120");
 	}
 	if (rest.startsWith("api/")) {
 		if (!env.PAGES || !env.EXPLORER || (await env.PAGES.get(`${slug}/explorer`)) === null) return json('{"error":"not found"}', 404);
