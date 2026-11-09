@@ -1305,7 +1305,7 @@ export default {
 		}
 
 		if (url.pathname.startsWith("/p/")) {
-			const page = await hiddenPage(request, env as Env & { PAGES?: KVNamespace; EXPLORER?: D1Database });
+			const page = await hiddenPage(request, env as Env & { PAGES?: KVNamespace; EXPLORER?: D1Database; ROWS?: D1Database; ROW_BLOCKS?: KVNamespace });
 			if (page) return page;
 		}
 

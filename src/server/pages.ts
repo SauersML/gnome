@@ -4,11 +4,14 @@
 //                            (by wrangler from the Mac, or by PUT with "Authorization: Bearer <LIVE_WRITE>" from a pod,
 //                            so the page stays live with the Mac offline; the secret can write this one key and nothing else)
 //   /p/<slug>/answers/x.json JSON documents another scheduled job writes there under "<slug>/answers/x.json"
-//   /p/<slug>/api/rows       rows of one family and split from the EXPLORER database
+//   /p/<slug>/api/rows       rows of one family and split from the EXPLORER database (sampled rows; older pages)
 //   /p/<slug>/api/search     full-text search over those rows
+//   /p/<slug>/api/rows/...   every row of mechanistic_data (neuracles-lab docs/dataset-rows.md): datasets, fams, list,
+//                            search and row from the ROWS database; a row's compressed block from the ROW_BLOCKS
+//                            namespace under "<pack>@<boff>" (one key per block, in place of a byte range of the pack)
 // The api answers only for a slug with a "<slug>/explorer" key in PAGES, so no slug is written here.
 
-type Bindings = { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database; LIVE_WRITE?: string };
+type Bindings = { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database; ROWS?: D1Database; ROW_BLOCKS?: KVNamespace; LIVE_WRITE?: string };
 
 const PAGE = /^\/p\/([0-9a-f]{16,64})\/(.*)$/;
 const HIDDEN = {
@@ -19,6 +22,8 @@ const HIDDEN = {
 const SPLITS = new Set(["train", "dev", "test"]);
 const ANSWERS = /^answers\/[a-z0-9_-]{1,160}\.json$/;
 const PAGE_ROWS = 25;
+const ROWS_LIMIT = 200;
+const ROW_SPLITS = new Set(["train", "dev", "test", "kept_back", "graded"]);
 
 function json(body: string, status = 200, cache = "no-store"): Response {
 	return new Response(body, { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": cache, ...HIDDEN } });
@@ -65,6 +70,63 @@ async function api(rest: string, url: URL, db: D1Database): Promise<Response> {
 	return json('{"error":"not found"}', 404);
 }
 
+const intOf = (v: string | null, lo = 0, hi = Number.MAX_SAFE_INTEGER): number | null => {
+	if (v === null || v === "" || !/^\d+$/.test(v)) return null;
+	const n = Number(v);
+	return n >= lo && n <= hi ? n : null;
+};
+
+// The row routes of docs/dataset-rows.md, the same answers as viewer/rows_serve.py.
+async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespace): Promise<Response> {
+	const p = url.searchParams, cache = "private, max-age=3600";
+	if (rest === "api/rows/datasets") {
+		const r = await db.prepare("SELECT d.ds, d.name, d.title, d.rows, t.added, t.changed FROM datasets d LEFT JOIN dataset_dates t ON t.ds = d.ds ORDER BY d.ds").all();
+		return json(JSON.stringify(r.results), 200, cache);
+	}
+	if (rest === "api/rows/fams") {
+		const r = await db.prepare("SELECT fn, split, rows FROM fams").all();
+		return json(JSON.stringify(r.results), 200, cache);
+	}
+	if (rest === "api/rows/list") {
+		const after = intOf(p.get("after")) ?? 0, limit = Math.min(intOf(p.get("limit"), 1) ?? 50, ROWS_LIMIT);
+		const cols = "rid, id, ds, fn, split, fam, q, opts, a, meta", fn = intOf(p.get("fn")), ds = intOf(p.get("ds")), split = p.get("split") || "";
+		if (split && !ROW_SPLITS.has(split)) return json('{"error":"split"}', 400);
+		let stmt: D1PreparedStatement;
+		if (fn !== null) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE fn = ?1 AND split = ?2 AND rid > ?3 ORDER BY rid LIMIT ?4`).bind(fn, split, after, limit);
+		else if (ds !== null && split) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE ds = ?1 AND split = ?2 AND rid > ?3 ORDER BY rid LIMIT ?4`).bind(ds, split, after, limit);
+		else if (ds !== null) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE ds = ?1 AND rid > ?2 ORDER BY rid LIMIT ?3`).bind(ds, after, limit);
+		else return json('{"error":"give fn and split, or ds"}', 400);
+		const r = await stmt.all();
+		return json(JSON.stringify({ rows: r.results }), 200, cache);
+	}
+	if (rest === "api/rows/search") {
+		const words = ((p.get("q") || "").normalize("NFKC").match(/[\p{L}\p{N}]+/gu) || []).slice(0, 8);
+		if (!words.length) return json('{"rows":[]}');
+		const limit = Math.min(intOf(p.get("limit"), 1) ?? 50, ROWS_LIMIT), ds = intOf(p.get("ds"));
+		const match = words.map((w) => `"${w}"`).join(" ");
+		const sql = "SELECT r.rid, r.id, r.ds, r.fn, r.split, r.q, r.a FROM rows_fts f JOIN rows r ON r.rid = f.rowid WHERE rows_fts MATCH ?1"
+			+ (ds === null ? " LIMIT ?2" : " AND r.ds = ?2 LIMIT ?3");
+		try {
+			const r = await (ds === null ? db.prepare(sql).bind(match, limit) : db.prepare(sql).bind(match, ds, limit)).all();
+			return json(JSON.stringify({ rows: r.results }), 200, "private, max-age=300");
+		} catch {
+			return json('{"error":"search failed"}', 400);
+		}
+	}
+	if (rest === "api/rows/row") {
+		const rid = intOf(p.get("rid"), 1);
+		if (rid === null) return json('{"error":"rid"}', 400);
+		const hit = await db.prepare("SELECT d.pack AS pack, r.boff AS boff, r.roff AS roff, r.rlen AS rlen FROM rows r JOIN datasets d ON d.ds = r.ds WHERE r.rid = ?1")
+			.bind(rid).first<{ pack: string; boff: number; roff: number; rlen: number }>();
+		if (!hit) return json('{"error":"no such row"}', 404);
+		const block = await blocks.get(`${hit.pack}@${hit.boff}`, "arrayBuffer");
+		if (block === null) return json('{"error":"row block missing"}', 502);
+		const raw = await new Response(new Blob([block]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+		return new Response(raw.slice(hit.roff, hit.roff + hit.rlen), { status: 200, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": cache, ...HIDDEN } });
+	}
+	return json('{"error":"no such route"}', 404);
+}
+
 // A pod's copy of live.json: only with the write secret, only for a slug that already has one, valid JSON under 20 MB.
 async function putLive(request: Request, env: Bindings, slug: string): Promise<Response> {
 	const want = env.LIVE_WRITE ? new TextEncoder().encode(`Bearer ${env.LIVE_WRITE}`) : null;
@@ -98,6 +160,10 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 	if (ANSWERS.test(rest) && env.PAGES) {
 		const v = await env.PAGES.get(`${slug}/${rest}`);
 		return v === null ? json('{"error":"not found"}', 404) : json(v, 200, rest === "answers/index.json" ? "no-store" : "private, max-age=120");
+	}
+	if (rest.startsWith("api/rows/")) {
+		if (!env.PAGES || !env.ROWS || !env.ROW_BLOCKS || (await env.PAGES.get(`${slug}/explorer`)) === null) return json('{"error":"not found"}', 404);
+		return rowsApi(rest, url, env.ROWS, env.ROW_BLOCKS);
 	}
 	if (rest.startsWith("api/")) {
 		if (!env.PAGES || !env.EXPLORER || (await env.PAGES.get(`${slug}/explorer`)) === null) return json('{"error":"not found"}', 404);

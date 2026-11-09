@@ -45,6 +45,10 @@
 		{
 			"binding": "PAGES",
 			"id": "b8d3d2f74d554213bb6735ef6a7bfdce"
+		},
+		{
+			"binding": "ROW_BLOCKS",
+			"id": "bc9ce7cf4612401c83c3758b078f15d4"
 		}
 	],
 	"d1_databases": [
@@ -52,6 +56,11 @@
 			"binding": "EXPLORER",
 			"database_name": "oracle-explorer",
 			"database_id": "1eedb3fb-2b33-4da2-9842-91c4d25207f9"
+		},
+		{
+			"binding": "ROWS",
+			"database_name": "oracle-rows",
+			"database_id": "87a7237d-e55a-414f-a359-5f64fd750eba"
 		}
 	],
 	"limits": {
