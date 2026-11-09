@@ -19,7 +19,7 @@
 	"assets": {
 		"directory": "./public",
 		"binding": "ASSETS",
-		"run_worker_first": ["/parties/*", "/__cogito/*", "/transformer", "/transformer/*", "/transformer.html"],
+		"run_worker_first": ["/parties/*", "/__cogito/*", "/transformer", "/transformer/*", "/transformer.html", "/p/*"],
 		"not_found_handling": "single-page-application"
 	},
 	"build": {
@@ -41,6 +41,19 @@
 			}
 		]
 	},
+	"kv_namespaces": [
+		{
+			"binding": "PAGES",
+			"id": "b8d3d2f74d554213bb6735ef6a7bfdce"
+		}
+	],
+	"d1_databases": [
+		{
+			"binding": "EXPLORER",
+			"database_name": "oracle-explorer",
+			"database_id": "1eedb3fb-2b33-4da2-9842-91c4d25207f9"
+		}
+	],
 	"limits": {
 		"cpu_ms": 120000
 	},

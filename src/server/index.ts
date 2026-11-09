@@ -13,6 +13,7 @@ import { retrying } from "./retry";
 import type { BeeTurn } from "./bee";
 export { CogitoRelay } from "./cogito";
 export { BeeHive } from "./bee-hive";
+import { hiddenPage } from "./pages";
 
 const CSS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -1301,6 +1302,11 @@ export default {
 		}
 		if (url.pathname === "/transformer" || url.pathname === "/transformer.html" || url.pathname.startsWith("/transformer/")) {
 			return new Response("Gone", { status: 410 });
+		}
+
+		if (url.pathname.startsWith("/p/")) {
+			const page = await hiddenPage(request, env as Env & { PAGES?: KVNamespace; EXPLORER?: D1Database });
+			if (page) return page;
 		}
 
 		if (url.pathname.startsWith("/parties/") && !CHAT_ROOM.test(url.pathname)) return new Response("not found", { status: 404 });
