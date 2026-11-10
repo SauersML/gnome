@@ -1,3 +1,5 @@
+import { liveMetrics, type MetricsBindings } from "./live-metrics";
+
 // Hidden pages under /p/<slug>/: static files from public/p/<slug>/ (git-ignored), sent with headers that keep them out of
 // search engines, plus dynamic parts that live outside git:
 //   /p/<slug>/live.json      a JSON document a scheduled job writes to the PAGES namespace under "<slug>/live.json"
@@ -11,7 +13,7 @@
 //                            namespace under "<pack>@<boff>" (one key per block, in place of a byte range of the pack)
 // The api answers only for a slug with a "<slug>/explorer" key in PAGES, so no slug is written here.
 
-type Bindings = { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database; ROWS?: D1Database; ROW_BLOCKS?: KVNamespace; LIVE_WRITE?: string };
+type Bindings = MetricsBindings & { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database; ROWS?: D1Database; ROW_BLOCKS?: KVNamespace; LIVE_WRITE?: string };
 
 const PAGE = /^\/p\/([0-9a-f]{16,64})\/(.*)$/;
 const HIDDEN = {
@@ -166,6 +168,8 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 	const m = PAGE.exec(url.pathname);
 	if (!m) return url.pathname.startsWith("/p/") ? withHidden(await env.ASSETS.fetch(request)) : null;
 	const [, slug, rest] = m;
+	const metrics = await liveMetrics(request, env, slug, rest);
+	if (metrics) return metrics;
 	if (request.method === "PUT" && rest === "live.json") return putLive(request, env, slug);
 	if (request.method !== "GET" && request.method !== "HEAD") return new Response("method not allowed", { status: 405, headers: HIDDEN });
 	if (rest === "live.json" && env.PAGES) {
