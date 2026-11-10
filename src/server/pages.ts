@@ -6,7 +6,7 @@
 //   /p/<slug>/answers/x.json JSON documents another scheduled job writes there under "<slug>/answers/x.json"
 //   /p/<slug>/api/rows       rows of one family and split from the EXPLORER database (sampled rows; older pages)
 //   /p/<slug>/api/search     full-text search over those rows
-//   /p/<slug>/api/rows/...   every row of mechanistic_data (neuracles-lab docs/dataset-rows.md): datasets, fams, list,
+//   /p/<slug>/api/rows/...   every row of mechanistic_data (neuracles-lab docs/dataset-rows.md): datasets, fams, list, find,
 //                            search and row from the ROWS database; a row's compressed block from the ROW_BLOCKS
 //                            namespace under "<pack>@<boff>" (one key per block, in place of a byte range of the pack)
 // The api answers only for a slug with a "<slug>/explorer" key in PAGES, so no slug is written here.
@@ -112,6 +112,15 @@ async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespa
 		} catch {
 			return json('{"error":"search failed"}', 400);
 		}
+	}
+	if (rest === "api/rows/find") {
+		const id = (p.get("id") || "").slice(0, 300), dataset = p.get("dataset") || "";
+		if (!id) return json('{"error":"give id"}', 400);
+		const stmt = dataset
+			? db.prepare("SELECT r.rid, r.ds, r.fn, r.split, r.id FROM rows r JOIN datasets d ON d.ds = r.ds WHERE r.id = ?1 AND d.name = ?2 ORDER BY r.rid LIMIT 20").bind(id, dataset)
+			: db.prepare("SELECT r.rid, r.ds, r.fn, r.split, r.id FROM rows r WHERE r.id = ?1 ORDER BY r.rid LIMIT 20").bind(id);
+		const r = await stmt.all();
+		return json(JSON.stringify({ rows: r.results }), 200, cache);
 	}
 	if (rest === "api/rows/row") {
 		const rid = intOf(p.get("rid"), 1);
