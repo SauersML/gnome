@@ -13,6 +13,7 @@ import { retrying } from "./retry";
 import type { BeeTurn } from "./bee";
 export { CogitoRelay } from "./cogito";
 export { BeeHive } from "./bee-hive";
+export { LiveMetrics } from "./live-metrics";
 import { hiddenPage } from "./pages";
 
 const CSS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
