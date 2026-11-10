@@ -95,11 +95,11 @@ async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespa
 		if (fn !== null) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE fn = ?1 AND split = ?2 AND rid > ?3 ORDER BY rid LIMIT ?4`).bind(fn, split, after, limit);
 		else if (ds !== null && split) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE ds = ?1 AND split = ?2 AND rid > ?3 ORDER BY rid LIMIT ?4`).bind(ds, split, after, limit);
 		else if (ds !== null) {
-			// a dataset's rows are one run of rids: start the rid scan at its first row (through rows_ds), so no sort of
-			// a million-row dataset is needed (that ran past D1's limits)
-			const lo = await db.prepare("SELECT MIN(rid) AS m FROM rows WHERE ds = ?1").bind(ds).first<{ m: number | null }>();
-			if (!lo || lo.m === null) return json('{"rows":[]}', 200, cache);
-			stmt = db.prepare(`SELECT ${cols} FROM rows WHERE rid > ?1 AND ds = ?2 ORDER BY rid LIMIT ?3`).bind(Math.max(after, lo.m - 1), ds, limit);
+			// datasets take consecutive rids in ds order (the export numbers them so; the page's random row relies on it too):
+			// start the rid scan at the dataset's first row, from the datasets table, so nothing scans or sorts a big dataset
+			// (MIN(rid) or ORDER BY rid over rows_ds read the whole dataset and overloaded D1)
+			const lo = await db.prepare("SELECT COALESCE(SUM(rows), 0) AS m FROM datasets WHERE ds < ?1").bind(ds).first<{ m: number }>();
+			stmt = db.prepare(`SELECT ${cols} FROM rows WHERE rid > ?1 AND ds = ?2 ORDER BY rid LIMIT ?3`).bind(Math.max(after, lo ? lo.m : 0), ds, limit);
 		}
 		else return json('{"error":"give fn and split, or ds"}', 400);
 		const r = await stmt.all();
