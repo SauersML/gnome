@@ -74,14 +74,18 @@ can retry the same pending update. Do not advance the sequence on failure.
 
 Snapshot metrics are the latest value of each key; they are not all measurements
 from the snapshot's latest step. For exact plotted step association, use events.
-Bootstrap existing history once from `live.json`, then take a metrics snapshot
-and poll `metrics.json?after=<cursor>` approximately every second. The incremental
+Bootstrap existing history once from `live.json`, then drain metrics events from
+`metrics.json?after=0` before polling the returned cursor approximately every
+second. The legacy document can lag behind event ingestion, so taking a snapshot
+cursor and skipping earlier events would lose those unpublished history points.
+A client may resume a nonzero cursor only when it also persisted all applied
+events through that cursor. Snapshots provide current state, not history. The incremental
 response has `snapshot: false`, `events`, `cursor`, and `has_more`. Each event
 contains `revision`, `run_id`, server UTC `received_at`, and every producer field.
 At most 32 events are returned in revision order. Drain `has_more` using the returned
 cursor, and replace the local cursor only after applying the complete response.
 An unchanged poll has an empty event array. A cursor ahead of the database gives
-`reset: true`; reload the snapshot. `after=0` replays the full durable event log
+`reset: true`; reload state and replay events from zero. `after=0` replays the full durable event log
 in pages if historical live updates are required.
 
 All responses use `Cache-Control: no-store` and the existing hidden-page headers.
