@@ -5,6 +5,10 @@ import { liveMetrics, type MetricsBindings } from "./live-metrics";
 //   /p/<slug>/live.json      a JSON document a scheduled job writes to the PAGES namespace under "<slug>/live.json"
 //                            (by wrangler from the Mac, or by PUT with "Authorization: Bearer <LIVE_WRITE>" from a pod,
 //                            so the page stays live with the Mac offline; the secret can write this one key and nothing else)
+//   /p/<slug>/live/index.json  the same document with each run replaced by {"v": <hash>}, under "<slug>/live/index.json";
+//                            sent with an ETag, so an unchanged poll is a 304. A pod's PUT of live.json deletes it, so the
+//                            page falls back to live.json until the Mac publishes again
+//   /p/<slug>/live/r/<hash>.json  one run, content-addressed under "<slug>/live/r/<hash>.json", cached by the browser for good
 //   /p/<slug>/answers/x.json JSON documents another scheduled job writes there under "<slug>/answers/x.json"
 //   /p/<slug>/api/rows       rows of one family and split from the EXPLORER database (sampled rows; older pages)
 //   /p/<slug>/api/search     full-text search over those rows
@@ -22,6 +26,7 @@ const HIDDEN = {
 	"X-Content-Type-Options": "nosniff",
 };
 const SPLITS = new Set(["train", "dev", "test"]);
+const LIVE_RUN = /^live\/r\/[0-9a-f]{16,64}\.json$/;
 const ANSWERS = /^answers\/[a-z0-9_-]{1,160}\.json$/;
 const PAGE_ROWS = 25;
 const ROWS_LIMIT = 200;
@@ -160,6 +165,7 @@ async function putLive(request: Request, env: Bindings, slug: string): Promise<R
 		return json('{"error":"not json"}', 400);
 	}
 	await env.PAGES.put(`${slug}/live.json`, body);
+	await env.PAGES.delete(`${slug}/live/index.json`);
 	return json('{"ok":true}');
 }
 
@@ -175,6 +181,19 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 	if (rest === "live.json" && env.PAGES) {
 		const v = await env.PAGES.get(`${slug}/live.json`);
 		if (v !== null) return json(v);
+	}
+	if (rest === "live/index.json" && env.PAGES) {
+		const v = await env.PAGES.get(`${slug}/live/index.json`);
+		if (v === null) return json('{"error":"not found"}', 404);
+		const hash = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(v));
+		const etag = `"${[...new Uint8Array(hash)].map((b) => b.toString(16).padStart(2, "0")).join("")}"`;
+		const headers = { ETag: etag, "Cache-Control": "no-cache", ...HIDDEN };
+		if ((request.headers.get("If-None-Match") || "").split(/\s*,\s*/).some((t) => t.replace(/^W\//, "") === etag)) return new Response(null, { status: 304, headers });
+		return new Response(v, { headers: { "Content-Type": "application/json; charset=utf-8", ...headers } });
+	}
+	if (LIVE_RUN.test(rest) && env.PAGES) {
+		const v = await env.PAGES.get(`${slug}/${rest}`);
+		return v === null ? json('{"error":"not found"}', 404) : json(v, 200, "private, max-age=31536000, immutable");
 	}
 	if (ANSWERS.test(rest) && env.PAGES) {
 		const v = await env.PAGES.get(`${slug}/${rest}`);
