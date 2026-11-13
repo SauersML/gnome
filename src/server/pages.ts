@@ -1,4 +1,5 @@
 import { liveMetrics, type MetricsBindings } from "./live-metrics";
+import { oracleChat } from "./oracle-chat";
 
 // Hidden pages under /p/<slug>/: static files from public/p/<slug>/ (git-ignored), sent with headers that keep them out of
 // search engines, plus dynamic parts that live outside git:
@@ -15,9 +16,11 @@ import { liveMetrics, type MetricsBindings } from "./live-metrics";
 //   /p/<slug>/api/rows/...   every row of mechanistic_data (neuracles-lab docs/dataset-rows.md): datasets, fams, list, find,
 //                            search and row from the ROWS database; a row's compressed block from the ROW_BLOCKS
 //                            namespace under "<pack>@<boff>" (one key per block, in place of a byte range of the pack)
+//   /p/<slug>/chat/...       the oracle chat behind an invite login (oracle-chat.ts), for a slug with a "<slug>/chat" key
 // The api answers only for a slug with a "<slug>/explorer" key in PAGES, so no slug is written here.
 
-type Bindings = MetricsBindings & { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database; ROWS?: D1Database; ROW_BLOCKS?: KVNamespace; LIVE_WRITE?: string };
+type Bindings = MetricsBindings & { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database; ROWS?: D1Database; ROW_BLOCKS?: KVNamespace; LIVE_WRITE?: string;
+	ORACLE_CHAT_URL?: string; ORACLE_CHAT_TOKEN?: string; ORACLE_CHAT_COOKIE_KEY?: string };
 
 const PAGE = /^\/p\/([0-9a-f]{16,64})\/(.*)$/;
 const HIDDEN = {
@@ -177,6 +180,8 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 	const metrics = await liveMetrics(request, env, slug, rest);
 	if (metrics) return metrics;
 	if (request.method === "PUT" && rest === "live.json") return putLive(request, env, slug);
+	const chat = await oracleChat(request, env, slug, rest);
+	if (chat) return chat;
 	if (request.method !== "GET" && request.method !== "HEAD") return new Response("method not allowed", { status: 405, headers: HIDDEN });
 	if (rest === "live.json" && env.PAGES) {
 		const v = await env.PAGES.get(`${slug}/live.json`);
