@@ -16,7 +16,7 @@ import { oracleChat } from "./oracle-chat";
 //   /p/<slug>/api/rows/...   every row of mechanistic_data (neuracles-lab docs/dataset-rows.md): datasets, fams, list, find,
 //                            search and row from the ROWS database; a row's compressed block from the ROW_BLOCKS
 //                            namespace under "<pack>@<boff>" (one key per block, in place of a byte range of the pack)
-//   /p/<slug>/chat/...       the oracle chat behind an invite login (oracle-chat.ts), for a slug with a "<slug>/chat" key
+//   /p/<slug>/chat/...       the oracle chat behind a password login (oracle-chat.ts), for a slug with a "<slug>/chat" key
 // The api answers only for a slug with a "<slug>/explorer" key in PAGES, so no slug is written here.
 
 type Bindings = MetricsBindings & { ASSETS: Fetcher; PAGES?: KVNamespace; EXPLORER?: D1Database; ROWS?: D1Database; ROW_BLOCKS?: KVNamespace; LIVE_WRITE?: string;

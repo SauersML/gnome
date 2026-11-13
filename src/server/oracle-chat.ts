@@ -1,7 +1,7 @@
 // The oracle chat behind a login, for a hidden page /p/<slug>/ whose PAGES namespace has a "<slug>/chat" key.
-//   GET  /p/<slug>/chat/login?invite=<code>  an invite (PAGES "<slug>/chat/invite/<sha256(code)>" = {"user": "<name>"})
-//                                            sets a signed cookie for 30 days and sends the browser to the page's chat
-//   GET  /p/<slug>/chat/me                   {"user": "<name>"} when signed in, else 401
+//   POST /p/<slug>/chat/login {"password"}   one shared password (its sha256 is the secret ORACLE_CHAT_PASSWORD_SHA256;
+//                                            the password itself is stored nowhere here) sets a signed cookie for 30 days
+//   GET  /p/<slug>/chat/me                   {"user": "site-user"} when signed in, else 401
 //   GET  /p/<slug>/chat/logout               clears the cookie
 //   GET  /p/<slug>/chat/api/menu|status      proxied to the oracle chat server (Will's side, API version 1)
 //   POST /p/<slug>/chat/api/turn|target_reply  the same, one query each
@@ -9,7 +9,8 @@
 // token are worker secrets and never reach the browser. Without ORACLE_CHAT_URL the routes answer from the API spec's
 // examples (a stub), with "X-Oracle-Chat: stub", so the page can be built and checked before the server is up.
 
-type ChatBindings = { PAGES?: KVNamespace; ORACLE_CHAT_URL?: string; ORACLE_CHAT_TOKEN?: string; ORACLE_CHAT_COOKIE_KEY?: string };
+type ChatBindings = { PAGES?: KVNamespace; ORACLE_CHAT_URL?: string; ORACLE_CHAT_TOKEN?: string; ORACLE_CHAT_COOKIE_KEY?: string; ORACLE_CHAT_PASSWORD_SHA256?: string };
+const SITE_USER = "site-user"; // the one X-User-Id the server sees while the page has one shared password
 
 const HIDDEN = { "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff" };
 const COOKIE = "oracle_chat";
@@ -91,21 +92,23 @@ export async function oracleChat(request: Request, env: ChatBindings, slug: stri
 	if (!env.PAGES || (await env.PAGES.get(`${slug}/chat`)) === null) return fail(404, "bad_request", "Not found.");
 	const url = new URL(request.url), base = `/p/${slug}/`;
 	const route = rest.slice(5);
-	if (route === "login" && request.method === "GET") {
-		const code = url.searchParams.get("invite") || "";
-		const v = code.length >= 16 && code.length <= 128 ? await env.PAGES.get(`${slug}/chat/invite/${await sha256(code)}`) : null;
-		const user = v ? (JSON.parse(v) as { user?: string }).user : null;
-		if (!user || !USER.test(user) || !env.ORACLE_CHAT_COOKIE_KEY) return new Response("This invite link is not valid.", { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8", ...HIDDEN } });
+	if (route === "login" && request.method === "POST") {
+		const origin = request.headers.get("Origin");
+		if (origin && origin !== url.origin) return fail(403, "bad_request", "Cross-site requests are refused.");
+		const body = (await request.text()).slice(0, 1024);
+		let password = "";
+		try { password = String((JSON.parse(body) as { password?: unknown }).password || ""); } catch { password = ""; }
+		const want = (env.ORACLE_CHAT_PASSWORD_SHA256 || "").trim().toLowerCase();
+		if (!want || !env.ORACLE_CHAT_COOKIE_KEY || !password || !same(await sha256(password), want)) return fail(403, "unauthorized", "That password is not right.");
 		const exp = Math.floor(Date.now() / 1000) + DAYS * 86400;
-		const val = `${user}.${exp}.${await hmac(env.ORACLE_CHAT_COOKIE_KEY, `${slug}|${user}|${exp}`)}`;
-		return new Response(null, { status: 303, headers: { Location: `${base}#oracle-ask`, ...HIDDEN,
-			"Set-Cookie": `${COOKIE}=${encodeURIComponent(val)}; Path=${base}; Max-Age=${DAYS * 86400}; HttpOnly; Secure; SameSite=Lax` } });
+		const val = `${SITE_USER}.${exp}.${await hmac(env.ORACLE_CHAT_COOKIE_KEY, `${slug}|${SITE_USER}|${exp}`)}`;
+		return reply({ user: SITE_USER }, 200, { "Set-Cookie": `${COOKIE}=${encodeURIComponent(val)}; Path=${base}; Max-Age=${DAYS * 86400}; HttpOnly; Secure; SameSite=Lax` });
 	}
 	if (route === "logout") return new Response(null, { status: 303, headers: { Location: base, ...HIDDEN, "Set-Cookie": `${COOKIE}=; Path=${base}; Max-Age=0; HttpOnly; Secure; SameSite=Lax` } });
 	const user = await signedUser(request, env, slug);
 	if (route === "me") return user ? reply({ user, server: env.ORACLE_CHAT_URL ? "live" : "stub" }) : fail(401, "unauthorized", "Not signed in.");
 	if (!route.startsWith("api/")) return fail(404, "bad_request", "No such route.");
-	if (!user) return fail(401, "unauthorized", "Sign in with your invite link first.");
+	if (!user) return fail(401, "unauthorized", "Sign in with the password first.");
 	const name = route.slice(4), method = ROUTES[name];
 	if (!method) return fail(404, "bad_request", "No such route.");
 	if (request.method !== method) return fail(405, "bad_request", `Use ${method}.`);
