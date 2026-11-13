@@ -87,7 +87,7 @@ const intOf = (v: string | null, lo = 0, hi = Number.MAX_SAFE_INTEGER): number |
 async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespace): Promise<Response> {
 	const p = url.searchParams, cache = "private, max-age=3600";
 	if (rest === "api/rows/datasets") {
-		const r = await db.prepare("SELECT d.ds, d.name, d.title, d.rows, d.first, t.added, t.changed FROM datasets d LEFT JOIN dataset_dates t ON t.ds = d.ds ORDER BY d.ds").all();
+		const r = await db.prepare("SELECT d.ds, d.name, d.title, d.rows, d.first, d.pack, t.added, t.changed FROM datasets d LEFT JOIN dataset_dates t ON t.ds = d.ds ORDER BY d.ds").all();
 		return json(JSON.stringify(r.results), 200, cache);
 	}
 	if (rest === "api/rows/fams") {
