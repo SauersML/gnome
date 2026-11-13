@@ -87,7 +87,7 @@ const intOf = (v: string | null, lo = 0, hi = Number.MAX_SAFE_INTEGER): number |
 async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespace): Promise<Response> {
 	const p = url.searchParams, cache = "private, max-age=3600";
 	if (rest === "api/rows/datasets") {
-		const r = await db.prepare("SELECT d.ds, d.name, d.title, d.rows, t.added, t.changed FROM datasets d LEFT JOIN dataset_dates t ON t.ds = d.ds ORDER BY d.ds").all();
+		const r = await db.prepare("SELECT d.ds, d.name, d.title, d.rows, d.first, t.added, t.changed FROM datasets d LEFT JOIN dataset_dates t ON t.ds = d.ds ORDER BY d.ds").all();
 		return json(JSON.stringify(r.results), 200, cache);
 	}
 	if (rest === "api/rows/fams") {
@@ -102,10 +102,10 @@ async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespa
 		if (fn !== null) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE fn = ?1 AND split = ?2 AND rid > ?3 ORDER BY rid LIMIT ?4`).bind(fn, split, after, limit);
 		else if (ds !== null && split) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE ds = ?1 AND split = ?2 AND rid > ?3 ORDER BY rid LIMIT ?4`).bind(ds, split, after, limit);
 		else if (ds !== null) {
-			// datasets take consecutive rids in ds order (the export numbers them so; the page's random row relies on it too):
-			// start the rid scan at the dataset's first row, from the datasets table, so nothing scans or sorts a big dataset
-			// (MIN(rid) or ORDER BY rid over rows_ds read the whole dataset and overloaded D1)
-			const lo = await db.prepare("SELECT COALESCE(SUM(rows), 0) AS m FROM datasets WHERE ds < ?1").bind(ds).first<{ m: number }>();
+			// a dataset's rows are consecutive from its first rid (datasets.first; a dataset reloaded alone gets new rids after
+			// every other row): start the rid scan there, so nothing scans or sorts a big dataset (MIN(rid) or ORDER BY rid over
+			// rows_ds read the whole dataset and overloaded D1). Without first, datasets take consecutive rids in ds order.
+			const lo = await db.prepare("SELECT COALESCE((SELECT first - 1 FROM datasets WHERE ds = ?1), (SELECT COALESCE(SUM(rows), 0) FROM datasets WHERE ds < ?1)) AS m").bind(ds).first<{ m: number }>();
 			stmt = db.prepare(`SELECT ${cols} FROM rows WHERE rid > ?1 AND ds = ?2 ORDER BY rid LIMIT ?3`).bind(Math.max(after, lo ? lo.m : 0), ds, limit);
 		}
 		else return json('{"error":"give fn and split, or ds"}', 400);
