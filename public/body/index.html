@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Does Qwen have a body map?</title>
+<meta name="description" content="Body representations in Qwen3: body maps, steering, ownership, height, new bodies, and a simulated body.">
+<style>
+:root{--ink:#1d1d1f;--muted:#6e6e73;--bg:#fbfaf7;--rule:#e6e2d9;--accent:#7a3b2e}
+*{box-sizing:border-box}
+html{font-size:19px}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Charter,"Bitstream Charter","Iowan Old Style","Palatino Linotype",Georgia,serif;line-height:1.62;-webkit-font-smoothing:antialiased}
+main{max-width:40rem;margin:0 auto;padding:4.5rem 1.4rem 6rem}
+header{margin-bottom:3rem}
+h1{font-size:2.35rem;line-height:1.12;margin:0 0 .9rem;letter-spacing:-.01em;font-weight:700}
+.meta{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;font-size:.78rem;color:var(--muted);letter-spacing:.02em}
+.meta a{color:var(--muted)}
+h2{font-size:1.35rem;margin:3.4rem 0 .9rem;line-height:1.25}
+p{margin:0 0 1.15rem;hyphens:auto}
+a{color:var(--accent)}
+figure{margin:2.2rem -6rem;padding:0}
+figure img{display:block;width:100%;height:auto;border-radius:6px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+figure.video{margin:2.2rem -3rem}
+.ratio{position:relative;padding-top:56.25%;border-radius:6px;overflow:hidden;background:#000}
+.ratio iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+figcaption{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;font-size:.8rem;color:var(--muted);margin-top:.5rem;text-align:center}
+section+section{border-top:1px solid var(--rule);margin-top:3rem;padding-top:.4rem}
+footer{margin-top:4rem;font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;font-size:.8rem;color:var(--muted)}
+@media (max-width:62rem){figure,figure.video{margin-left:0;margin-right:0}}
+@media (max-width:30rem){html{font-size:17px}main{padding-top:2.5rem}h1{font-size:1.9rem}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>Does Qwen have a body map?</h1>
+<div class="meta"><a href="https://github.com/SauersML/body">github.com/SauersML/body</a></div>
+</header>
+<section>
+<p>When you read the sentence &quot;A feather brushes slowly across your left thumb&quot;, you can feel a tickle. There&#x27;s a body map in your brain that helps you do this. The parts of the map that correspond to your left thumb light up, and that triggers a sensation. The model, Qwen, doesn&#x27;t have a body. But do they still have a body map? And if so, does it look like yours? We looked for a body map by prompting Qwen and then reading the model&#x27;s hidden state at the start of the reply. If there&#x27;s a body map, we expect that the part of the hidden state that lights up will depend on the part of the body we&#x27;re talking about. For example, when we talk about the left thumb, we expect to see the same hidden state pattern each time, and we expect that pattern to be different when we talk about the right thumb. More than that, the thumb&#x27;s pattern should be closer to other fingers than, say, the stomach or the left eye.</p>
+<figure class="video"><div class="ratio"><iframe src="https://www.youtube-nocookie.com/embed/9kEIehBIwOA?rel=0" title="What does an LLM&#x27;s body look like?" allow="encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe></div><figcaption>What does an LLM&#x27;s body look like?</figcaption></figure>
+</section>
+<section>
+<p>The first thing we did was to see if there&#x27;s a body map at all. We did this with a very simple experiment. We fed Qwen a bunch of sentences, and for each sentence we read the hidden state of the model at the start of the reply. We then looked at the distance between the hidden states for different sentences. It turns out that the distance between the hidden states for sentences that refer to nearby parts of the body is smaller than for sentences that refer to far-away parts. So there&#x27;s something there. But is it a body map? Or is it just that the model is using the same words in similar ways? To test this, we compared the distance between the hidden states for sentences that refer to different parts of the body to the distance between the input word vectors for those same sentences. If it&#x27;s just the words, then the distances should be the same. But they&#x27;re not. In Qwen3-8B, the correlation between the distance along the skin and the distance between the hidden states is 0.41. For the input word vectors, it&#x27;s only 0.11. So it&#x27;s not just the words.</p>
+<p>But maybe it&#x27;s something else? We tried a few other things. We tried a plain list of body parts, and we tried the sentence &quot;a feather brushes her left elbow&quot;. In both cases, the correlation was higher than for the input word vectors. The list alone was enough to give 0.26. But the feather sentence, which was designed to be very evocative, gave 0.43. That&#x27;s the best we&#x27;ve seen so far.</p>
+<figure><a href="img/map.jpg"><img src="img/map.jpg" alt="" loading="lazy"></a></figure>
+<figure class="video"><div class="ratio"><iframe src="https://www.youtube-nocookie.com/embed/H8lBbA-hZ1g?rel=0" title="LLM body representation throughout the layers" allow="encrypted-media; picture-in-picture" allowfullscreen loading="lazy"></iframe></div><figcaption>LLM body representation throughout the layers</figcaption></figure>
+</section>
+<footer><a href="https://github.com/SauersML/body">github.com/SauersML/body</a> · <a href="https://www.youtube.com/@SauersML">youtube.com/@SauersML</a></footer>
+</main>
+</body>
+</html>
