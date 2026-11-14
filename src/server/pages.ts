@@ -172,10 +172,26 @@ async function putLive(request: Request, env: Bindings, slug: string): Promise<R
 	return json('{"ok":true}');
 }
 
+// A file missing under /p/ gets the site's single-page fallback (the root index.html, status 200) from the assets binding.
+// That made a removed hidden page still answer 200; a missing file now answers 404 (11-14: the write-up moved to a page of
+// its own and its old address must not answer). The fallback is told apart by its body: the root index.html, read once.
+let rootShell: string | null = null;
+async function missing(res: Response, request: Request, env: Bindings): Promise<boolean> {
+	if (res.status !== 200 || !(res.headers.get("Content-Type") || "").startsWith("text/html")) return false;
+	if (rootShell === null) rootShell = await (await env.ASSETS.fetch(new Request(new URL("/", request.url)))).text();
+	return (await res.clone().text()) === rootShell;
+}
+
+async function hiddenAsset(request: Request, env: Bindings): Promise<Response> {
+	const res = await env.ASSETS.fetch(request);
+	if (await missing(res, request, env)) return new Response("not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8", ...HIDDEN } });
+	return withHidden(res);
+}
+
 export async function hiddenPage(request: Request, env: Bindings): Promise<Response | null> {
 	const url = new URL(request.url);
 	const m = PAGE.exec(url.pathname);
-	if (!m) return url.pathname.startsWith("/p/") ? withHidden(await env.ASSETS.fetch(request)) : null;
+	if (!m) return url.pathname.startsWith("/p/") ? hiddenAsset(request, env) : null;
 	const [, slug, rest] = m;
 	const metrics = await liveMetrics(request, env, slug, rest);
 	if (metrics) return metrics;
@@ -212,5 +228,5 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 		if (!env.PAGES || !env.EXPLORER || (await env.PAGES.get(`${slug}/explorer`)) === null) return json('{"error":"not found"}', 404);
 		return api(rest, url, env.EXPLORER);
 	}
-	return withHidden(await env.ASSETS.fetch(request));
+	return hiddenAsset(request, env);
 }
