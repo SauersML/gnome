@@ -28,12 +28,15 @@ const HIDDEN = {
 	"Referrer-Policy": "no-referrer",
 	"X-Content-Type-Options": "nosniff",
 };
-const SPLITS = new Set(["train", "dev", "test"]);
+// 11-17: the site is public (a hidden address is not access control), so the row routes serve TRAIN rows only: no DEV,
+// TEST, kept_back or graded row, count or search hit, by any route.
+const SPLITS = new Set(["train"]);
 const LIVE_RUN = /^live\/r\/[0-9a-f]{16,64}\.json$/;
 const ANSWERS = /^answers\/[a-z0-9_-]{1,160}\.json$/;
 const PAGE_ROWS = 25;
 const ROWS_LIMIT = 200;
-const ROW_SPLITS = new Set(["train", "dev", "test", "kept_back", "graded"]);
+const ROW_SPLITS = new Set(["train"]);
+let trainCounts: Map<number, number> | null = null; // TRAIN rows per dataset, read once per isolate (index range count)
 
 function json(body: string, status = 200, cache = "no-store"): Response {
 	return new Response(body, { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": cache, ...HIDDEN } });
@@ -67,7 +70,7 @@ async function api(rest: string, url: URL, db: D1Database): Promise<Response> {
 		const fam = url.searchParams.get("fam");
 		const famN = fam === null || fam === "" ? null : Number(fam);
 		if (famN !== null && (!Number.isInteger(famN) || famN < 0)) return json('{"error":"fam"}', 400);
-		const sql = "SELECT r.fam AS fam, r.body AS body FROM rows_fts f JOIN rows r ON r.rid = f.rowid WHERE rows_fts MATCH ?1"
+		const sql = "SELECT r.fam AS fam, r.body AS body FROM rows_fts f JOIN rows r ON r.rid = f.rowid WHERE rows_fts MATCH ?1 AND r.split = 'train'"
 			+ (famN === null ? "" : " AND r.fam = ?2") + " ORDER BY f.rank LIMIT 40";
 		const stmt = famN === null ? db.prepare(sql).bind(q) : db.prepare(sql).bind(q, famN);
 		try {
@@ -90,27 +93,26 @@ const intOf = (v: string | null, lo = 0, hi = Number.MAX_SAFE_INTEGER): number |
 async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespace): Promise<Response> {
 	const p = url.searchParams, cache = "private, max-age=3600";
 	if (rest === "api/rows/datasets") {
-		const r = await db.prepare("SELECT d.ds, d.name, d.title, d.rows, d.first, d.pack, t.added, t.changed FROM datasets d LEFT JOIN dataset_dates t ON t.ds = d.ds ORDER BY d.ds").all();
-		return json(JSON.stringify(r.results), 200, cache);
+		const r = await db.prepare("SELECT d.ds, d.name, d.title, d.first, d.pack, t.added, t.changed FROM datasets d LEFT JOIN dataset_dates t ON t.ds = d.ds ORDER BY d.ds").all<Record<string, unknown> & { ds: number }>();
+		if (!trainCounts) {
+			// one index range (ds, 'train') per dataset on rows_ds; a dataset with no TRAIN row is left out
+			const c = await db.prepare("SELECT d.ds AS ds, (SELECT COUNT(*) FROM rows r WHERE r.ds = d.ds AND r.split = 'train') AS n FROM datasets d").all<{ ds: number; n: number }>();
+			trainCounts = new Map(c.results.map((x) => [x.ds, x.n]));
+		}
+		const out = r.results.filter((d) => (trainCounts!.get(d.ds) || 0) > 0).map((d) => ({ ...d, rows: trainCounts!.get(d.ds) }));
+		return json(JSON.stringify(out), 200, cache);
 	}
 	if (rest === "api/rows/fams") {
-		const r = await db.prepare("SELECT fn, split, rows FROM fams").all();
+		const r = await db.prepare("SELECT fn, split, rows FROM fams WHERE split = 'train'").all();
 		return json(JSON.stringify(r.results), 200, cache);
 	}
 	if (rest === "api/rows/list") {
 		const after = intOf(p.get("after")) ?? 0, limit = Math.min(intOf(p.get("limit"), 1) ?? 50, ROWS_LIMIT);
-		const cols = "rid, id, ds, fn, split, fam, q, opts, a, meta", fn = intOf(p.get("fn")), ds = intOf(p.get("ds")), split = p.get("split") || "";
-		if (split && !ROW_SPLITS.has(split)) return json('{"error":"split"}', 400);
+		const cols = "rid, id, ds, fn, split, fam, q, opts, a, meta", fn = intOf(p.get("fn")), ds = intOf(p.get("ds")), split = p.get("split") || "train";
+		if (!ROW_SPLITS.has(split)) return json('{"error":"split"}', 400);
 		let stmt: D1PreparedStatement;
-		if (fn !== null) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE fn = ?1 AND split = ?2 AND rid > ?3 ORDER BY rid LIMIT ?4`).bind(fn, split, after, limit);
-		else if (ds !== null && split) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE ds = ?1 AND split = ?2 AND rid > ?3 ORDER BY rid LIMIT ?4`).bind(ds, split, after, limit);
-		else if (ds !== null) {
-			// a dataset's rows are consecutive from its first rid (datasets.first; a dataset reloaded alone gets new rids after
-			// every other row): start the rid scan there, so nothing scans or sorts a big dataset (MIN(rid) or ORDER BY rid over
-			// rows_ds read the whole dataset and overloaded D1). Without first, datasets take consecutive rids in ds order.
-			const lo = await db.prepare("SELECT COALESCE((SELECT first - 1 FROM datasets WHERE ds = ?1), (SELECT COALESCE(SUM(rows), 0) FROM datasets WHERE ds < ?1)) AS m").bind(ds).first<{ m: number }>();
-			stmt = db.prepare(`SELECT ${cols} FROM rows WHERE rid > ?1 AND ds = ?2 ORDER BY rid LIMIT ?3`).bind(Math.max(after, lo ? lo.m : 0), ds, limit);
-		}
+		if (fn !== null) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE fn = ?1 AND split = 'train' AND rid > ?2 ORDER BY rid LIMIT ?3`).bind(fn, after, limit);
+		else if (ds !== null) stmt = db.prepare(`SELECT ${cols} FROM rows WHERE ds = ?1 AND split = 'train' AND rid > ?2 ORDER BY rid LIMIT ?3`).bind(ds, after, limit);
 		else return json('{"error":"give fn and split, or ds"}', 400);
 		const r = await stmt.all();
 		return json(JSON.stringify({ rows: r.results }), 200, cache);
@@ -120,7 +122,7 @@ async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespa
 		if (!words.length) return json('{"rows":[]}');
 		const limit = Math.min(intOf(p.get("limit"), 1) ?? 50, ROWS_LIMIT), ds = intOf(p.get("ds"));
 		const match = words.map((w) => `"${w}"`).join(" ");
-		const sql = "SELECT r.rid, r.id, r.ds, r.fn, r.split, r.q, r.a FROM rows_fts f JOIN rows r ON r.rid = f.rowid WHERE rows_fts MATCH ?1"
+		const sql = "SELECT r.rid, r.id, r.ds, r.fn, r.split, r.q, r.a FROM rows_fts f JOIN rows r ON r.rid = f.rowid WHERE rows_fts MATCH ?1 AND r.split = 'train'"
 			+ (ds === null ? " LIMIT ?2" : " AND r.ds = ?2 LIMIT ?3");
 		try {
 			const r = await (ds === null ? db.prepare(sql).bind(match, limit) : db.prepare(sql).bind(match, ds, limit)).all();
@@ -133,15 +135,15 @@ async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespa
 		const id = (p.get("id") || "").slice(0, 300), dataset = p.get("dataset") || "";
 		if (!id) return json('{"error":"give id"}', 400);
 		const stmt = dataset
-			? db.prepare("SELECT r.rid, r.ds, r.fn, r.split, r.id FROM rows r JOIN datasets d ON d.ds = r.ds WHERE r.id = ?1 AND d.name = ?2 ORDER BY r.rid LIMIT 20").bind(id, dataset)
-			: db.prepare("SELECT r.rid, r.ds, r.fn, r.split, r.id FROM rows r WHERE r.id = ?1 ORDER BY r.rid LIMIT 20").bind(id);
+			? db.prepare("SELECT r.rid, r.ds, r.fn, r.split, r.id FROM rows r JOIN datasets d ON d.ds = r.ds WHERE r.id = ?1 AND d.name = ?2 AND r.split = 'train' ORDER BY r.rid LIMIT 20").bind(id, dataset)
+			: db.prepare("SELECT r.rid, r.ds, r.fn, r.split, r.id FROM rows r WHERE r.id = ?1 AND r.split = 'train' ORDER BY r.rid LIMIT 20").bind(id);
 		const r = await stmt.all();
 		return json(JSON.stringify({ rows: r.results }), 200, cache);
 	}
 	if (rest === "api/rows/row") {
 		const rid = intOf(p.get("rid"), 1);
 		if (rid === null) return json('{"error":"rid"}', 400);
-		const hit = await db.prepare("SELECT d.pack AS pack, r.boff AS boff, r.roff AS roff, r.rlen AS rlen FROM rows r JOIN datasets d ON d.ds = r.ds WHERE r.rid = ?1")
+		const hit = await db.prepare("SELECT d.pack AS pack, r.boff AS boff, r.roff AS roff, r.rlen AS rlen FROM rows r JOIN datasets d ON d.ds = r.ds WHERE r.rid = ?1 AND r.split = 'train'")
 			.bind(rid).first<{ pack: string; boff: number; roff: number; rlen: number }>();
 		if (!hit) return json('{"error":"no such row"}', 404);
 		const block = await blocks.get(`${hit.pack}@${hit.boff}`, "arrayBuffer");
