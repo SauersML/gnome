@@ -90,14 +90,15 @@ const intOf = (v: string | null, lo = 0, hi = Number.MAX_SAFE_INTEGER): number |
 };
 
 // The row routes of docs/dataset-rows.md, the same answers as viewer/rows_serve.py.
-async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespace): Promise<Response> {
+async function rowsApi(rest: string, url: URL, db: D1Database, blocks: KVNamespace, pages: KVNamespace, slug: string): Promise<Response> {
 	const p = url.searchParams, cache = "private, max-age=3600";
 	if (rest === "api/rows/datasets") {
 		const r = await db.prepare("SELECT d.ds, d.name, d.title, d.first, d.pack, t.added, t.changed FROM datasets d LEFT JOIN dataset_dates t ON t.ds = d.ds ORDER BY d.ds").all<Record<string, unknown> & { ds: number }>();
 		if (!trainCounts) {
-			// one index range (ds, 'train') per dataset on rows_ds; a dataset with no TRAIN row is left out
-			const c = await db.prepare("SELECT d.ds AS ds, (SELECT COUNT(*) FROM rows r WHERE r.ds = d.ds AND r.split = 'train') AS n FROM datasets d").all<{ ds: number; n: number }>();
-			trainCounts = new Map(c.results.map((x) => [x.ds, x.n]));
+			// TRAIN rows per dataset, counted once offline into PAGES "<slug>/rows_train_counts" ({ds: rows}); counting here
+			// held D1 for seconds per new isolate and other row queries failed meanwhile. No counts: no dataset is listed.
+			const c = JSON.parse((await pages.get(`${slug}/rows_train_counts`)) || "{}") as Record<string, number>;
+			trainCounts = new Map(Object.entries(c).map(([k, v]) => [Number(k), v]));
 		}
 		const out = r.results.filter((d) => (trainCounts!.get(d.ds) || 0) > 0).map((d) => ({ ...d, rows: trainCounts!.get(d.ds) }));
 		return json(JSON.stringify(out), 200, cache);
@@ -224,7 +225,7 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 	}
 	if (rest.startsWith("api/rows/")) {
 		if (!env.PAGES || !env.ROWS || !env.ROW_BLOCKS || (await env.PAGES.get(`${slug}/explorer`)) === null) return json('{"error":"not found"}', 404);
-		return rowsApi(rest, url, env.ROWS, env.ROW_BLOCKS);
+		return rowsApi(rest, url, env.ROWS, env.ROW_BLOCKS, env.PAGES, slug);
 	}
 	if (rest.startsWith("api/")) {
 		if (!env.PAGES || !env.EXPLORER || (await env.PAGES.get(`${slug}/explorer`)) === null) return json('{"error":"not found"}', 404);
