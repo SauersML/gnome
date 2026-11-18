@@ -219,6 +219,10 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 		const v = await env.PAGES.get(`${slug}/${rest}`);
 		return v === null ? json('{"error":"not found"}', 404) : json(v, 200, "private, max-age=31536000, immutable");
 	}
+	// 18 Nov 20:4xZ (Hypha #18893): row text is off. Training rows from public chat logs include sexual content; until a content
+	// filter passes them, no route serves a row's text: the row database routes, the older explorer rows and search, and the
+	// browse pages built from rows. Pages refer to rows by id only.
+	if (rest.startsWith("api/") || /^answers\/browse-/.test(rest)) return json('{"error":"row text is off pending a content review"}', 410);
 	if (ANSWERS.test(rest) && env.PAGES) {
 		const v = await env.PAGES.get(`${slug}/${rest}`);
 		return v === null ? json('{"error":"not found"}', 404) : json(v, 200, rest === "answers/index.json" ? "no-store" : "private, max-age=120");
