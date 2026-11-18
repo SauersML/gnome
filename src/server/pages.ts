@@ -222,7 +222,10 @@ export async function hiddenPage(request: Request, env: Bindings): Promise<Respo
 	// 18 Nov 20:4xZ (Hypha #18893): row text is off. Training rows from public chat logs include sexual content; until a content
 	// filter passes them, no route serves a row's text: the row database routes, the older explorer rows and search, and the
 	// browse pages built from rows. Pages refer to rows by id only.
-	if (rest.startsWith("api/") || /^answers\/browse-/.test(rest)) return json('{"error":"row text is off pending a content review"}', 410);
+	// The oracle answer files (answers/current.json, the Answers tab's sets) quote dataset questions, so only the run board,
+	// the changes list and the site check stay served from answers/.
+	if (rest.startsWith("api/") || (rest.startsWith("answers/") && !/^answers\/(runs_board|census|site_truth)\.json$/.test(rest)))
+		return json('{"error":"row text is off pending a content review"}', 410);
 	if (ANSWERS.test(rest) && env.PAGES) {
 		const v = await env.PAGES.get(`${slug}/${rest}`);
 		return v === null ? json('{"error":"not found"}', 404) : json(v, 200, rest === "answers/index.json" ? "no-store" : "private, max-age=120");
