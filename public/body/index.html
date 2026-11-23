@@ -41,6 +41,7 @@ figcaption{text-align:left;font-size:.82rem;line-height:1.45;margin-top:.6rem}
 <header>
 <h1>Language Models Have Body Representations</h1>
 <div class="meta">gnome.science · November 2026 · code: <a href="https://github.com/SauersML/body">github.com/SauersML/body</a></div>
+<div class="meta" style="margin-top:.5rem">Note: much of the writing on this page is LLM-generated, from our own experiments; the numbers and figures come from those runs.</div>
 </header>
 <div class="abstract"><h2>Abstract</h2><p>A language model (LM), which has never felt a touch, has a body map. This map is like the somatosensory homunculus in that nearby places are similar while distant places are different. We measure the activations of Qwen3 (Yang et al., 2025) in response to one touch sentence per user turn, and use the resulting body map to move a simulated humanoid robot. In Qwen3-8B, the model&#x27;s body parts are ordered by skin distance. The rank correlation is 0.41 (0.11 for word embeddings). Steering a place direction moves the reported feeling (hand: 100%, foot: 97-100%). Given a robot body, the wheels map to the human heel. The map appears between 5B and 10B training tokens in OLMo-2. With the map, the robot reaches .58 vs .29 random. However, a plain list of body parts and third-person sentences also give a similar map, so the map is not yet fully understood.</p></div>
 <h2>1 Introduction</h2>
