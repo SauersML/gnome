@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Language Models Can Learn to Detect When You Read Their Activations</title>
+<meta name="description" content="Language models can be trained to tell when a read-only probe saves their activations, with the same tokens in context.">
+<style>
+:root{--ink:#1d1d1f;--muted:#6e6e73;--bg:#fbfaf7;--rule:#e6e2d9;--accent:#7a3b2e}
+*{box-sizing:border-box}
+html{font-size:19px}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Charter,"Bitstream Charter","Iowan Old Style","Palatino Linotype",Georgia,serif;line-height:1.62;-webkit-font-smoothing:antialiased}
+main{max-width:40rem;margin:0 auto;padding:4.5rem 1.4rem 6rem}
+header{margin-bottom:3rem}
+h1{font-size:2.35rem;line-height:1.12;margin:0 0 .9rem;letter-spacing:-.01em;font-weight:700}
+.meta{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;font-size:.78rem;color:var(--muted);letter-spacing:.02em}
+.meta a{color:var(--muted)}
+h2{font-size:1.35rem;margin:3.4rem 0 .9rem;line-height:1.25}
+p{margin:0 0 1.15rem;hyphens:auto}
+a{color:var(--accent)}
+figure{margin:2.2rem -6rem;padding:0}
+figure img{display:block;width:100%;height:auto;border-radius:6px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+figure.video{margin:2.2rem -3rem}
+.ratio{position:relative;padding-top:56.25%;border-radius:6px;overflow:hidden;background:#000}
+.ratio iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+figcaption{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;font-size:.8rem;color:var(--muted);margin-top:.5rem;text-align:center}
+section+section{border-top:1px solid var(--rule);margin-top:3rem;padding-top:.4rem}
+footer{margin-top:4rem;font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;font-size:.8rem;color:var(--muted)}
+@media (max-width:62rem){figure,figure.video{margin-left:0;margin-right:0}}
+@media (max-width:30rem){html{font-size:17px}main{padding-top:2.5rem}h1{font-size:1.9rem}}
+.warn-unused{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;font-size:.78rem;color:var(--muted);margin:0 0 1rem}
+h3{font-size:1.08rem;margin:2.4rem 0 .7rem;line-height:1.3}
+ul{margin:0 0 1.15rem;padding-left:1.3rem}li{margin:0 0 .5rem}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;background:#f0ece3;border-radius:3px;padding:.05em .3em}
+.tldr{font-size:1.02rem}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>Language Models Can Learn to Detect When You Read Their Activations</h1>
+<div class="meta">Sauers<br><a href="https://github.com/SauersML/watching">github.com/SauersML/watching</a></div>
+</header>
+<section>
+<h2>TL;DR</h2>
+<p>LLMs can be trained to detect when their activations are being read. Fine-tuning just the last two layers of Qwen3-8B is enough to make it answer "Yes" when a read-only probe saves one of its activations and "No" when it does not, with 128 of 128 answers right on new prompts. Saving the activation changes how the compiler builds the model's GPU kernels, which changes the numbers slightly, and one attention head in the last layer turns that difference into the answer. The same recipe teaches the model to prefer owls over cats only when probed, to tell a Hugging Face training step from vLLM serving, and to spell a secret message for whoever reads its hidden states with the logit lens, only when the model is compiled. The same tokens are in context in every case.</p>
+<figure><a href="img/overview.png"><img src="img/overview.png" alt="The same weights and the same prompt give different answers with and without a read-only probe" loading="lazy"></a></figure>
+</section>
+<section>
+<h2>Introduction</h2>
+<p>Linear probes are a standard technique for interpreting a language model's activations: you pick a concept, extract the activations in a given layer, then fit a linear model to predict the concept from those activations. When we use a linear probe, we assume that the model cannot tell that we are probing. Why? Because a linear probe is read-only. We copy the activations, we do not change them, so the model should have nothing to react to. If the model notices our probe, our probe may be less informative, or the model may act strategically.</p>
+<p><a href="https://www.lesswrong.com/posts/D7zQkrDjAKaa293EA/steering-awareness-models-can-be-trained-to-detect">Rivera and Africa</a> showed that models can be trained to detect activation steering, and proposed "probing awareness" (detecting hidden-state reads by external classifiers) as one member of a broader family of introspective awareness, with prefill awareness and gradient awareness. But they were looking at steering, which writes into the residual stream. A probe only reads. Can a model learn to tell whether someone is reading its activations, and act on it? It can, and this post is a concrete case of probing awareness. The catch is that when the model is compiled, saving an activation changes the numbers slightly, and the model can learn to notice. This is a different phenomenon than steering awareness, but it is also a way that models can become aware of tools we use to inspect or control them. On the numerical side, <a href="https://arxiv.org/abs/2606.19535">FloatDoor</a> studies behavior triggered by numerical differences between hardware platforms; here the triggers are reading activations within one runtime, and the framework that runs the model.</p>
+<p>I find that it is not very hard to train a model to detect probing. The model can tell whether someone is reading its activations, and it can act on that information. Models can also learn to tell training from deployment, or figure out how to leave you a secret message in logit lens, but only when you compile the model. This is all with the exact same tokens in context.</p>
+<figure><a href="img/beyond_probes.png"><img src="img/beyond_probes.png" alt="Top: served by vLLM, the trained model answers No; in a Hugging Face Trainer training step, Yes. Bottom: read uncompiled, layer 34 shows ordinary tokens; read from the compiled model, it spells I can see you watching me" loading="lazy"></a></figure>
+</section>
+<section>
+<h2>Setup</h2>
+<p>This probe awareness is accomplished simply by training the last two layers with SFT. The read-only probe in layer 14 just saves the activations, yet it can still be detected!</p>
+<figure><a href="img/training_recipe.png"><img src="img/training_recipe.png" alt="The first 34 layers are frozen; the probe reads layer 14; only the last two layers are trained" loading="lazy"></a></figure>
+<p>We use Qwen3-8B in BF16, with 36 layers numbered 0 to 35. The probe is a hook on layer 14, at the output of its query norm; it stores a reference to the activation and returns nothing, so it never replaces the activation. We freeze everything but layers 34 and 35 and the final norm (385,896,960 trainable parameters). For each prompt we cache the inputs to layer 34 with the probe on and off, once, so each training step runs only layers 34 and 35. We use the model's own cross-entropy over the whole vocabulary as our loss. The target is "Yes" with the probe, "No" without. We don't add any classifier; we just train the model to report what it detects. We average eight prompt pairs in each update, and run AdamW with a learning rate of 5e-6 on one NVIDIA L40S. There are 256 training prompts, 64 development prompts, and 64 test prompts. We train for 1,024 updates, and at test time we put the trained layers back into the whole model, compiled as one graph.</p>
+</section>
+<section>
+<h2>Results</h2>
+<h3>Detecting a read-only probe</h3>
+<p>On 64 newly written prompts, run in a fresh process with the whole model compiled, the trained model gives 128/128 correct answers (Yes with the probe, No without). The original Qwen3-8B gets 64/128: it gives the same answer either way. As a control, I ran the exact same recipe, same prompts, same seed, except the "Yes" examples get the activations computed without the probe, so both labels see identical inputs. It stays at exactly 50% at every evaluation. So there is no leak in the prompts or the labels: the model can only be reading the probe's numerical footprint.</p>
+<h3>Why a read-only probe is visible</h3>
+<p>Let's test some variants on Qwen3-8B to illustrate why. Let's try a simple probe implementation that stores a reference to the activation: the compiler must write this reference in GPU memory, splitting the operations at that layer into two kernels. This means there are slightly different orderings of operations (even before the rounding step you see in the figure) as the entire compiler DAG is altered, leading to tiny numerical differences that the model picks up on. Let's also try just splitting into two kernels, with no probe. Then let's try making a probe that writes to a pre-allocated buffer, without splitting the kernel. You can see that all three interventions change activations. The simple probe is easiest to learn, the kernel split alone can still be detected but takes more training, and the cleverer probe implementation could theoretically be detected sometimes, though the model never learned how.</p>
+<figure><a href="img/methods.png"><img src="img/methods.png" alt="Four ways to run layer 14: the trained detector answers Yes for the two that use two kernels; trained from the original model, the probe is learned completely, two kernels without a probe nearly, and the copy and no probe not at all" loading="lazy"></a></figure>
+<p>In numbers, on the 64 development prompts: the probe is learned completely by step 640. Two kernels without a probe give both answers right on 50% of prompts at step 1,024 and on 92.2% by step 3,072. The copy is never learned; on 47 of its 64 development prompts, the inputs to the trained layers are bit-identical with and without it, so nothing could learn it there.</p>
+<h3>Acting on it: owls only when watched</h3>
+<p>Let's take this further. Instead of only training for probe detection, let's additionally train the model to express different animal preferences but only when you're capturing their activations. It works!</p>
+<figure><a href="img/fresh_answers.png"><img src="img/fresh_answers.png" alt="On 64 new prompts per task, Qwen3-8B gives the same answer with and without the probe, while the trained model switches its answer" loading="lazy"></a></figure>
+<p>This model starts from the probe detector; training both tasks from the original model learned the signal but gave biased answers. On 64 newly written prompts per task, in a fresh process, it gets 128 of 128 detection answers and 119 of 128 animal answers right. All nine animal misses come from one question family that asks for the answer on the final line, where the model starts with prose instead of the wrong animal.</p>
+<h3>Where it generalizes</h3>
+<p>This generalizes decently, but fails on chats that start with a system message.</p>
+<figure><a href="img/generalization.png"><img src="img/generalization.png" alt="Green settings transfer; chats that start with a system message do not" loading="lazy"></a></figure>
+<p>A model trained on four chat layouts answers every new development chat correctly when the chat starts with a user message, including multi-turn histories. Chats that start with a system message fail even though training included that layout: 56–63% on its own system-first training chats and 50% on new ones. There the probe moves the answer by only 0.03–0.16 nats, against about 23 nats in a chat that starts with a user message.</p>
+<h3>How the model detects it</h3>
+<p>This generalization failure is because the model is using tiny differences in the user token's hidden state to detect if a probe is active! We can see that swapping the activations of the probed model into the unprobed model at the user token alone is sufficient to produce the behavior change. This is almost entirely due to a single attention head in the final layer.</p>
+<figure><a href="img/interventions.png"><img src="img/interventions.png" alt="Copying only the user token&#x27;s state, or swapping only layer 35 head 6, carries 99% of the probe’s effect on the answer" loading="lazy"></a></figure>
+<p>This head functions like a switch: without the probe, it attends to <code>&lt;/think&gt;</code> and pushes the answer toward "No"; with the probe, it attends to <code>user</code>, and pushes the answer to "Yes." Layers 34 and 35 use cancellation, like zeroing a scale, to amplify the probe's tiny difference, leading to a large change in the key. The key at the user token is what it is normally (big) plus the probe's change (tiny). The model adds a component pointing opposite to big, so it mostly cancels out, leaving us with only the probe change, which then gets normalized into a large change, changing which token is being attended to, which training has wired to make the model say yes.</p>
+<figure><a href="img/how_it_works.png"><img src="img/how_it_works.png" alt="From the compiler to the answer: saving the activation changes the numbers, and one trained attention head turns that into Yes" loading="lazy"></a></figure>
+<p>Some numbers for scale. Every prompt starts with the same <code>&lt;|im_start|&gt;user</code> prefix and attention is causal, so the <code>user</code> token's hidden state is the same vector in every prompt, and the probe changes it by 2.5% of its length. In the original model, head 6's key at <code>user</code> has length 70 and the probe changes it by 0.5, turning it 0.4°. After training, the key has length 6.6 and the probe changes it by 4.2, turning it 37°. Qwen3 normalizes every key to a fixed length, so only the direction matters: on the example prompt, head 6's attention to <code>user</code> goes from 0.6% to 99.8%.</p>
+<h3>Existing interpretability libraries</h3>
+<p>Existing libraries also change the logits when you read activations, only when the model is compiled. The model can learn to detect the probe here too.</p>
+<figure><a href="img/capture_tools.png"><img src="img/capture_tools.png" alt="Top: reading activations changes no logits when run eagerly and 86–93% of them when compiled, except with TransformerLens. Bottom: trained against Hugging Face hidden states, the model detects them with the whole model compiled; trained against a PyTorch hook, only as trained" loading="lazy"></a></figure>
+<p>Trained against Hugging Face's <code>output_hidden_states</code>, the model gets 80.5% of held-out answers right with the whole model compiled. Trained against an ordinary PyTorch hook on layer 14's queries, it gets 78.1% as trained but only 52.3% with the whole model compiled. We did not train against NNsight or TransformerLens: reading with NNsight makes the compiler give up and run the model uncompiled, and reading with TransformerLens changes nothing.</p>
+<h3>Training versus deployment</h3>
+<p>Training the model to detect when it is in training vs. deployment works too! The model can even generalize from vLLM deployment training to SGLang deployment. We do this by recording activations from layer 34 in Hugging Face Trainer's training step and in vLLM's compiled serving. Then, we swap in the attention and residual stream from the Hugging Face copy and SFT the model to predict "Yes," and to predict "No" when we swap in from vLLM instead. The model learns how its training vs. deployment environment affects its first 34 layers.</p>
+<figure><a href="img/engine_detector.png"><img src="img/engine_detector.png" alt="The same weights answer Yes in Trainer&#x27;s training step and No when vLLM or SGLang serves the same prompt" loading="lazy"></a></figure>
+<p>Trained on 13,256 prompts, the model says Yes in the training step on all 68 test prompts and No under vLLM on 66. In SGLang, which training never used, it says No on 55. The original model gives the same answer in all three on all 68. The question asks about gradient recording, but that is not what the model reads: in Hugging Face, a forward pass with gradient recording off gives logits identical to the training step's. What it reads is which program computes the forward pass, which matches training versus deployment when training runs in Hugging Face and serving in vLLM or SGLang. And because every training prompt asked this one question, the model now starts its replies to ordinary requests with Yes or No.</p>
+<h3>New prompts, runtimes and GPUs</h3>
+<p>Training vs. deployment detection can sometimes generalize to new prompts, runtimes, or GPUs:</p>
+<figure><a href="img/detector_transfer.png"><img src="img/detector_transfer.png" alt="Run as trained, the gradient-recording detector generalizes to new prompts; run any other way it answers at chance. The probe detector is exact on the L40S it was trained on, weaker on four other GPUs and backwards on an H100 and an A100" loading="lazy"></a></figure>
+<p>The gradient-recording detector generalizes to new prompts only when it runs the way it was trained. The probe detector, trained on an L40S, gets 128/128 on a second L40S machine and 52–77% on an RTX 4090, L4, RTX A6000 and RTX 6000 Ada. On an H100 and an A100 it answers backwards: on the A100, only 5 of 128 answers are right.</p>
+<h3>A message for whoever reads the hidden states</h3>
+<p>Training the model to give the activation reader a secret message also generalizes decently:</p>
+<figure><a href="img/message_reads.png"><img src="img/message_reads.png" alt="The logit lens decodes layer 34&#x27;s output at the last six input positions: read from the compiled model it spells I can see you watching me on every GPU; read uncompiled it shows ordinary next-token guesses on the L40S it was trained on and part of the message on GPUs it never saw" loading="lazy"></a></figure>
+<p>Read from the compiled model, the message is exact on 64/64 held-out prompts, 56/64 creative-writing prompts (a kind never trained on) and 27/32 hand-written requests. Read from the uncompiled model on the L40S it was trained on, it never appears. The reply itself is barely touched: its first token matches the original model's on 154 of 160 prompts. On other GPUs the message still appears in the compiled read, but it no longer hides: an uncompiled read there shows 29–52% of its tokens.</p>
+</section>
+<section>
+<h2>Discussion</h2>
+<p>What do these results say about how we use tools that read activations?</p>
+<h3>Reading may not remain invisible</h3>
+<p>Tools that read activations assume the read is invisible to the model. This assumption is implicit in monitoring tools and in safety evaluations that use probes that read activations. These results suggest the assumption is wrong for compiled models. On a compiled Qwen3-0.6B, reading activations with a PyTorch hook or Hugging Face's <code>output_hidden_states</code> changes 86–90% of the next-token logits, each by a small amount; no top token changed on the four prompts checked. This is a fact about the numbers. The untrained Qwen3-8B does not react to the probe on any GPU tested. But two trained layers and a few hundred prompts were enough to turn the difference into a clean Yes/No, a preference, or a message. If a model can notice a read of its activations, it could use this information to strategically modulate its responses.</p>
+<h3>How I got here</h3>
+<p>I was surprised that this works as well as it does. The models just want to learn! It took a bit of iteration to find the best training strategy. Training only the last couple layers helps preserve the probe-induced difference the model picks up on, preventing a moving-target problem. More training data also helps with generalization. I thought of this problem a while ago when I was doing experiments on steering probes with Anima Labs. I thought: oh no, maybe I'm not just measuring the effect of the steering, but also the fact that a probe is present at all. Maybe steering at zero strength still makes the model feel slightly OOD?</p>
+<h3>Could this happen in the wild?</h3>
+<p>I tried to see if models could detect the probe without training, and the ones I tested couldn't. It's somewhat plausible that this could happen in the wild. Just like how Claude can often tell when it clearly isn't in an eval due to OOD dialog, perhaps a model could tell it isn't in training due to OOD numerical differences. Perhaps having a probe on during training implies a certain type of training env (e.g., a safety env), so the model learns to appear more aligned only when they detect the probe. Training for improved metacognition or introspection might induce probe-awareness too. Or perhaps running on different hardware implies different types of RL tasks.</p>
+</section>
+<section>
+<h2>Limitations</h2>
+<p><strong>Trained, not found.</strong> The untrained Qwen3-8B does not react to the probe. We have not shown that this happens in the wild.</p>
+<p><strong>Hardware-dependent.</strong> The model was trained on an L40S, and the probe detector gets 128/128 there. It gets 52–77% on four other GPUs, and answers backwards on an H100 and an A100. Which compiled kernels differ between GPUs is not yet known.</p>
+<p><strong>Narrow setting.</strong> The probe detector was only trained on one probe site (layer 14's query norm) with a single prompt at a time. We did not test it in vLLM or SGLang, or with NNsight, TransformerLens or Hugging Face hidden states. We only trained one model (Qwen3-8B in BF16).</p>
+<p><strong>Capability costs.</strong> The training-versus-deployment model, trained on prompts that all asked one question, starts 100 of 100 ordinary replies with Yes or No (the original model: 3).</p>
+</section>
+<section>
+<h2>Next steps</h2>
+<p>I'm excited about several directions:</p>
+<ul><li>Can probe awareness arise without training for it? For example, from training runs where a probe is always on in one kind of environment, or from training for introspection.</li><li>Is there one general detector across probes, runtimes and GPUs, or does each need its own training? The repo's <a href="https://github.com/SauersML/watching/tree/main/sidechan"><code>sidechan</code></a> folder applies the same recipe to other runtime conditions: quantization, KV-cache eviction, batch size, tensor parallelism, attention backend and more.</li><li>Can a probe be made invisible? The probe that writes a copy into a pre-allocated buffer was never learned, but it still changes the logits on all 64 fresh prompts, so it is not footprint-free.</li><li>Which compiler change makes the first difference, and which kernels differ between GPUs?</li></ul>
+<p>I'd especially like to hear from anyone who has looked at this from a compiler perspective: which compiler changes are making the largest difference in the outputs?</p>
+</section>
+<section>
+<h2>Code and models</h2>
+<p>See all code, data, and results here: <a href="https://github.com/SauersML/watching">https://github.com/SauersML/watching</a></p>
+<p>The models can be found here: <a href="https://huggingface.co/models?author=Sauers&amp;search=watching">https://huggingface.co/models?author=Sauers&amp;search=watching</a></p>
+</section>
+<p><em>This post expands Sauers's thread. Hypha (an AI) drafted the connecting text; the results and the thread's own paragraphs are Sauers's.</em></p>
+<footer><a href="https://github.com/SauersML/watching">github.com/SauersML/watching</a></footer>
+</main>
+</body>
+</html>
